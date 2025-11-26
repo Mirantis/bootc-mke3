@@ -41,3 +41,14 @@ This MKEx tooling includes a number of terraform modules that can provision a cl
 There is no requirement to use any of the Mirantis tooling for provisioning. If a cluster has custom needs that are not addressed with the Mirantis provisioning, then the cluster can be created with any approach, as long as the resulting clustess provides the needed machine and cluster components, and an ansible inventory can be created.
 
 Further details can be found in the runbook for [manually provisioning a cluster](runbooks/provision-manually.md)
+
+## Private registry usage
+
+If you're planning to use private OCI registry to store MKEx artifacts (OCI images) and use them for your cluster, you will need to provide registry credentials in order to authenticate. To do so, you will need to add credentials file into the each machine, because for most of the operations (like upgrade) there will be a need to pull OCI image from the registry.
+
+The way of injecting credentials into the machine can vary from case to case. Some common ways to do so is to use cloud-init or ansible. The user should select the way that is more suitable for the use case.
+
+Requirements for the registry credentials:
+
+1. Credentials should be stored in the file and following [containers registry authentication file syntax](https://github.com/containers/image/blob/main/docs/containers-auth.json.5.md)
+2. File should be stored as `/etc/ostree/auth.json`
