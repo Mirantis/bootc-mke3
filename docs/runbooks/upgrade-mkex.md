@@ -60,4 +60,4 @@ sudo bootc rollback
 
 ### Expected results
 
-The machine should have previous version of MCR and OS packages after reboot.
+The machine should have previous version of MCR and OS packages after reboot, without affecting the MKE version.
