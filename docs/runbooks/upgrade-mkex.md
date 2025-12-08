@@ -40,7 +40,7 @@ To troubleshoot MKE upgrade process, please see [official MKE documentation page
 
 ## MCR upgrade process troubleshooting
 
-MCR upgrade is done by ansible tooling which is applying new bootc deployment that contains a new MCR version (and other OS packages) in a form of OCI image. In case of failure, you will be prompted with an error message that applying new bootc deployment failed. If upgrade failed on this stage, you need to manually inspect the node to check if:
+MCR upgrade is implemented using ansible tooling which applies new bootc deployments, containing new MCR versions (and other OS packages) in the form of an OCI image. In case of failure, you will be prompted with an error message that applying the new bootc deployment failed. If the upgrade failed on this stage, you need to manually inspect the node to check if:
 
 1. There is no issue with network connectivity between node(s) and container registry, that contains new deployment in a form of OCI image
 2. There is no issue with registry credentials (if private registry is used)
