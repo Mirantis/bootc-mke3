@@ -1,18 +1,18 @@
-# MKEx
+# bootc-mke3
 
-MKEx is an integrated container orchestration platform that is powered by an immutable Rocky Linux operating system, offering next-level security and reliability.
+`bootc-mke3` is an integrated container orchestration platform that is powered by an immutable Rocky Linux operating system, offering next-level security and reliability.
 
-This repository contains a collection of tool, utilities and guides for managing and operating with MKEx. These tools support operations, automation, and configuration for secure and scalable container environments.
+This repository contains a collection of tool, utilities and guides for managing and operating with `bootc-mke3`. These tools support operations, automation, and configuration for secure and scalable container environments.
 
 ## Provisioning
 
-Provisioning is the process of preparing a cluster of MKEx compute nodes within a network environment that meets the requirements for deploying and operating Mirantis products.
+Provisioning is the process of preparing a cluster of `bootc-mke3` compute nodes within a network environment that meets the requirements for deploying and operating Mirantis products.
 
 For further details, please see [provisioning document](docs/provisioning.md).
 
 ### Assets
 
-Mirantis provides assets for provisioning MKEx on different providers. Assets consist of bootable images that can be used to provision virtual machine or baremetale machine.
+Mirantis provides assets for provisioning `bootc-mke3` on different providers. Assets consist of bootable images that can be used to provision virtual machine or baremetale machine.
 
 | Type  | Download link | Description | Mirantis product's version |
 | :---- | ------------- | ----------- | -------------------------- |
@@ -27,11 +27,11 @@ To perform installation, [Ansible](https://docs.ansible.com/) is used. There are
 
 Prerequisites for the installation can be found in the [Provisioning](#provisioning) section of this document.
 
-To perform the installation, please see [installation runbook](docs/runbooks/install-mkex.md).
+To perform the installation, please see [installation runbook](docs/runbooks/install-bootc-mke3.md).
 
 ## Upgrade
 
-To perform an upgrade , please see [upgrade runbook](docs/runbooks/upgrade-mkex.md).
+To perform an upgrade , please see [upgrade runbook](docs/runbooks/upgrade-bootc-mke3.md).
 
 ## Troubleshooting
 

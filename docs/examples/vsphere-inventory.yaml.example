@@ -1,24 +1,24 @@
 all:
   hosts:
-    # mkex-mngr1
-    mkex-mngr1:
+    # bootc-mke3-mngr1
+    bootc-mke3-mngr1:
       ansible_connection: ssh
-      ansible_ssh_private_key_file: /Users/mkex/Desktop/terraform/vsphere/ssh-keys/mkex.pem
+      ansible_ssh_private_key_file: /Users/bootc-mke3/Desktop/terraform/vsphere/ssh-keys/bootc-mke3.pem
       ansible_user: test
       ansible_host: 172.18.180.147
 
-    # mkex-wrk1
-    mkex-wrk1:
+    # bootc-mke3-wrk1
+    bootc-mke3-wrk1:
       ansible_connection: ssh
-      ansible_ssh_private_key_file: /Users/mkex/Desktop/terraform/vsphere/ssh-keys/mkex.pem
+      ansible_ssh_private_key_file: /Users/bootc-mke3/Desktop/terraform/vsphere/ssh-keys/bootc-mke3.pem
       ansible_user: test
       ansible_host: 172.18.180.149
   children:
     managers:
       hosts:
-        mkex-mngr1:
+        bootc-mke3-mngr1:
     workers:
       hosts:
-        mkex-wrk1:
+        bootc-mke3-wrk1:
   vars:
     mke_url: 172.18.180.147

@@ -1,6 +1,6 @@
 # Provisioning
 
-Provisioning is the process of preparing a cluster of MKEx compute nodes in a network cluster that can support the Mirantis products.
+Provisioning is the process of preparing a cluster of `bootc-mke3` compute nodes in a network cluster that can support the Mirantis products.
 
 # Components of the cluster
 
@@ -8,7 +8,7 @@ Provisioning is the process of preparing a cluster of MKEx compute nodes in a ne
 
 One or more compute machine nodes
 
-1. All machines must use the MKEx source base (image)
+1. All machines must use the `bootc-mke3` source base (image)
 2. All machines can be connected to by the installer, using any valid ansible connection method
 3. All machines meet the minimum product requirements for the used Mirantis products: memory, disk, machine-firewall
 
@@ -16,7 +16,7 @@ One or more compute machine nodes
 
 In order for the installer to interact with the cluster, the ansible tooling must be able to connect to the machines. As ansible has a flexible system for connecting to machines, a wide variety of [options are available](https://docs.ansible.com/ansible/latest/inventory_guide/connection_details.html).
 
-Machine users used for installation and upgrading will need to be able to escalate privilege. This is done using sudo on MKEx, so sudo will need to be configured on the machine.
+Machine users used for installation and upgrading will need to be able to escalate privilege. This is done using sudo on `bootc-mke3`, so sudo will need to be configured on the machine.
 
 * SSH is the most common connection method, so each machine should have a system user, with acceptible connection method (ssh keys), with sudo access configured *
 
@@ -32,9 +32,9 @@ When provisioning is complete, and the machine cluster is ready, provisioning ne
 
 ### Terraform tooling
 
-This MKEx tooling includes a number of terraform modules that can provision a cluster. 
+This `bootc-mke3` tooling includes a number of terraform modules that can provision a cluster. 
 
-- **vSphere.** Full guide on how to provision MKEx cluster on vSphere can be found in [this document](runbooks/provision-terraform-vsphere.md)
+- **vSphere.** Full guide on how to provision `bootc-mke3` cluster on vSphere can be found in [this document](runbooks/provision-terraform-vsphere.md)
 
 ### Manual provisioning (roll your own)
 
@@ -44,7 +44,7 @@ Further details can be found in the runbook for [manually provisioning a cluster
 
 ## Private registry usage
 
-If you're planning to use private OCI registry to store MKEx artifacts (OCI images) and use them for your cluster, you will need to provide registry credentials in order to authenticate. To do so, you will need to add credentials file into the each machine, because for most of the operations (like upgrade) there will be a need to pull OCI image from the registry.
+If you're planning to use private OCI registry to store `bootc-mke3` artifacts (OCI images) and use them for your cluster, you will need to provide registry credentials in order to authenticate. To do so, you will need to add credentials file into the each machine, because for most of the operations (like upgrade) there will be a need to pull OCI image from the registry.
 
 The way of injecting credentials into the machine can vary from case to case. Some common ways to do so is to use cloud-init or ansible. The user should select the way that is more suitable for the use case.
 

@@ -1,4 +1,4 @@
-# MKEx mixed clusters
+# bootc-mke3 mixed clusters
 
 Mirantis has performed testing, and finds no reason defects for cases where an MCR/MKE3 cluster includes both manually managed cluster and bootc-mke3 based machines.
 
@@ -8,7 +8,7 @@ Note the following limitations
 1. A single MCR25 and MKE3 version must be used across the existing cluster, and the bootc-mke3 machines added must be based off of the same versions
 2. bootc-mke3 cluster tooling for installation and upgrading will not be usable until a cluster contains only bootc-mke3 based machines
 
-## Migrating to bootc-mke3 (MKEx) from a classic MCR/MKE3 cluster
+## Migrating to bootc-mke3 from a classic MCR/MKE3 cluster
 
 Users of MCR/MKE3 who are interested in moving from their existing stack to a stack based on the bootc-mke3 framework can follow these instructions.
 
@@ -34,7 +34,7 @@ The transition follows the following phases, which refer either to runbooks ment
 Iterate through managers, and one at a time add a new bootc-mke3 based machine to the cluster as a manager, followed by removing a manager when the cluster has stabilized.
 
 1. Add a new manager:
-   a. Provision a new bootc-mke3 machine: Runbook: [Provision a bootc-mke3 machine](https://github.com/Mirantis/mkex/blob/main/docs/runbooks/provision-manually.md)
+   a. Provision a new bootc-mke3 machine: Runbook: [Provision a bootc-mke3 machine](https://github.com/Mirantis/bootc-mke3/blob/main/docs/runbooks/provision-manually.md)
    b. Add the new machine to the cluster: Runbook: [Add a machine to the cluster](#add-a-machine-to-the-mcrmke3-cluster)
    c. Promote the new machine to a manager: Runbook: [Promote a worker to a manager](#promote-a-worker-to-a-manager)
 
@@ -50,7 +50,7 @@ Iterate through managers, and one at a time add a new bootc-mke3 based machine t
 Iterate through workers, and one at a time add a new bootc-mke3 based machine to the cluster as a worker, followed by removing a worker when the cluster has stabilized. It is common also to swap machine in batches, if your workload can handle the capacity disruption.
 
 1. Add a new worker:
-   a. Provision a new bootc-mke3 machine: Runbook: [Provision a bootc-mke3 machine](https://github.com/Mirantis/mkex/blob/main/docs/runbooks/provision-manually.md)
+   a. Provision a new bootc-mke3 machine: Runbook: [Provision a bootc-mke3 machine](https://github.com/Mirantis/bootc-mke3/blob/main/docs/runbooks/provision-manually.md)
    b. Add the new machine to the cluster: Runbook: [Add a machine to the cluster](#add-a-machine-to-the-mcrmke3-cluster)
 
 2. Remove a worker from the cluster

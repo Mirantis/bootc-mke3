@@ -1,4 +1,4 @@
-# Provision MKEx with Terraform on vSphere
+# Provision `bootc-mke3` with Terraform on vSphere
 
 Provision machines on a vSphere backend, using terraform.
 
@@ -10,16 +10,16 @@ VSphere setup has a significant set of requirements, because VMWare clusters ten
 
 In order to proceed with this guide
 
-1. Obtain MKEx ISO and put it to the vSphere datastore that will be used for MKEx cluster installation
+1. Obtain `bootc-mke3` ISO and put it to the vSphere datastore that will be used for `bootc-mke3` cluster installation
 2. Configure vSphere networking by following [MKE documentation for network preparation](https://docs.mirantis.com/mke/3.7/install/predeployment/configure-networking.html)
-    - Additionally, MKEx nodes should have access to the NTP server (customer's local one or public one) and to https://get.mirantis.com
+    - Additionally, `bootc-mke3` nodes should have access to the NTP server (customer's local one or public one) and to https://get.mirantis.com
 3. In order to provision VMs in vSphere, you need to specify credentials of a user, that can operate vSphere. For a full list of privileges needed for the user, please see [Terrafrom vSphere provisioner documentation](https://registry.terraform.io/providers/hashicorp/vsphere/latest/docs#notes-on-required-privileges).
 
 ### Image and VM template
 
-All the VMs for MKEx cluster will be created by cloning a VM template. This template needs to be created in advance. There are 2 possible options for template preparation -- manual and automated. Currently, only manual option was implemented and tested.
+All the VMs for `bootc-mke3` cluster will be created by cloning a VM template. This template needs to be created in advance. There are 2 possible options for template preparation -- manual and automated. Currently, only manual option was implemented and tested.
 
-Below you can find the instructions on how to prepare VM template for MKEx cluster nodes.
+Below you can find the instructions on how to prepare VM template for `bootc-mke3` cluster nodes.
 
 #### Option 1 - Manual
 
@@ -27,13 +27,13 @@ Below you can find the instructions on how to prepare VM template for MKEx clust
 
 In the vSphere Web UI:
 
-1. Create new VM from MKEx ISO. During VM creation:
+1. Create new VM from `bootc-mke3` ISO. During VM creation:
     - As `Guest OS Family` select `Linux`.
     - As `Guest OS Version` select `Other 4.x or later Linux (64-bit)`.
     - In `Customize hardware` section set values according to [official MKE hardware requirements](https://docs.mirantis.com/mke/3.7/common/mke-hw-reqs.html).
-    - In `Customize hardware` section use MKEx ISO in `New CD/DVD Drive` parameter and check box to `Connect` it.
+    - In `Customize hardware` section use `bootc-mke3` ISO in `New CD/DVD Drive` parameter and check box to `Connect` it.
 2. Power On the VM.
-3. Launch Web Console for the VM and choose `Install MKEx 8-3.7-devel` option. Some initialization will happen and then you will enter graphical UI for MKEx installation
+3. Launch Web Console for the VM and choose `Install MKEx 8-3.7-devel` option. Some initialization will happen and then you will enter graphical UI for `bootc-mke3` installation
 4. Select the language in GUI.
 5. After that there will be a warning pop-up window about `unstable, pre-release software`. Click on `I want to proceed`.
 6. Next, click on `Installation Destination`. Select automatic storage configuration (selected by default) and click `Done`.
@@ -90,14 +90,14 @@ Here are some examples:
 /MIRANTIS/network/DSwitch-MKEx
 ```
 
-#### MKEx cluster infrastructure configuration
+#### bootc-mke3 cluster infrastructure configuration
 
-Variable for MKEx cluster infrastructure are quite self-descriptive. 
+Variable for `bootc-mke3` cluster infrastructure are quite self-descriptive. 
 
 Few things that need to be mentioned:
 1. Manager and worker disk sizes should be not less that ones defined in VM template.
 2. IP addresses of managers, workers and gateway should be configured according to vSphere network configuration. DNS should be reacheble by VMs.
-3. `cluster_name` variable will be used as a prefix for VM names. E.g. if cluster_name = "mkex-cluster", then names of managers will look like this: `mkex-cluster-ctr1`, `mkex-cluster-ctr2`, etc. Names of workers will look like this: `mkex-cluster-wrk1`, `mkex-cluster-wrk2`, etc.
+3. `cluster_name` variable will be used as a prefix for VM names. E.g. if cluster_name = "bootc-mke3-cluster", then names of managers will look like this: `bootc-mke3-cluster-ctr1`, `bootc-mke3-cluster-ctr2`, etc. Names of workers will look like this: `bootc-mke3-cluster-wrk1`, `bootc-mke3-cluster-wrk2`, etc.
 
 ## Procedure
 
