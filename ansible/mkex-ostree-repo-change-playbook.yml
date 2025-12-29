@@ -1,7 +1,0 @@
-- name: Repo OS with OSTree
-  hosts: all
-  vars_files:
-    - vars/common-vars.yml
-  gather_facts: false
-  tasks:
-    - ansible.builtin.include_tasks: tasks/change-ostree-repo.yml

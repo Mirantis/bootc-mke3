@@ -1,4 +1,4 @@
-# Upgrade MKEx
+# Upgrade bootc-mke3
 
 This guide explains how to upgrade an existing Mirantis Kubernetes Engine (MKE) cluster to the latest version or switch to a specific newer release.
 

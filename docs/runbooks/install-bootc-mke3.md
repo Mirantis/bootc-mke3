@@ -1,4 +1,4 @@
-# Install MKEx
+# Install bootc-mke3
 
 Deploy MKE cluster on top of provisioned infrastructure using the Ansible installer.
 
@@ -7,7 +7,7 @@ Deploy MKE cluster on top of provisioned infrastructure using the Ansible instal
 1. Ansible installed on the machine from which installation will be executed.
 2. The ansible installer requires an ansible inventory for a cluster of machines that meet the minimum requirements for the Mirantis Containers components.
 
-### MKEx component configuration
+### bootc-mke3 component configuration
 
 By default, admin user credentials for MKE UI are `admin/password`. If you want to configure admin user credentials for MKE, please change them in `ansible/vars/mke-creds.yml` file.
 
@@ -24,4 +24,4 @@ Ansible playbook runs without error. In order to verify the installation, go to 
 
 ## F.A.Q
 ### How can I install MKE with pre-configured settings/config?
-You'll need to set the `mke_config_src` to the path where your MKE toml file is. i.e. /usr/test/mkex-install/mke-config.toml. For the minimum version of the TOML file check [mke-config-min.toml.example](../examples/mke-config-min.toml.example). For complete list of toml config options check https://docs.mirantis.com/mke/3.8/ops/administer-cluster/configure-an-mke-cluster/configuration-options.html
+You'll need to set the `mke_config_src` to the path where your MKE toml file is. i.e. /usr/test/bootc-mke3-install/mke-config.toml. For the minimum version of the TOML file check [mke-config-min.toml.example](../examples/mke-config-min.toml.example). For complete list of toml config options check https://docs.mirantis.com/mke/3.8/ops/administer-cluster/configure-an-mke-cluster/configuration-options.html
