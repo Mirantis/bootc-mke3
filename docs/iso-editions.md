@@ -2,6 +2,8 @@
 
 Mirantis provides two ISO editions - Simple and Generic.
 
+**Simple** is used mostly for demo/test purposes, while **Generic** is considered production-grade solution (although it is still can be used for demo/test purposes).
+
 ## Simple 
 
 Simple ISO contains default and quite basic configuration that is already applied to an ISO. Limited customisation options are available in the user space once machine is booted.
@@ -15,9 +17,9 @@ Simple ISO considerations:
 
 ## Generic
 
-Generic ISO - is a plain ISO that lacks any customisation. Customisation process of this ISO is the main subject of this document.
+Generic ISO - is a plain ISO that lacks any customisation.
 
-As `bootc-mke3` is based on Rocky Linux, it is using [Anaconda](https://www.anaconda.com/docs/main) to perform installation. 
+As `bootc-mke3` is based on Rocky Linux, it is using [Anaconda](https://www.anaconda.com/docs/main) to perform installation and customisation with the help of Kickstart.
 
 ### Generic image customisation
 

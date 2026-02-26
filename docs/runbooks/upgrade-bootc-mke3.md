@@ -6,6 +6,7 @@ This guide explains how to upgrade an existing Mirantis Kubernetes Engine (MKE) 
 
 1. Ansible installed on the machine running the upgrade.
 2. An Ansible inventory describing the cluster. See the [inventory description document](../ansible-inventory-input.md) for details.
+3. Cluster machines should have RO access to a OCI registry with new `bootc-mke3` version. See [this document](../provisioning.md#registry) for more information about registry requirement.
 
 ## Procedure
 
