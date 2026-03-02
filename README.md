@@ -19,6 +19,10 @@ Mirantis provides assets for provisioning `bootc-mke3` on different providers. A
 | ISO   | [Link](https://get.mirantis.com/bootc-mke3/images/bootc-mke3-r9-bare-mcr25.0-mke3.8-simple.iso)      | **Simple** ISO with basic kickstart embedded. Unattended Anaconda installation will be performed. See [this document](docs/iso-editions.md#simple) to get more details about Simple image edition. | MCR 25.0.14.2 / MKE 3.8.10 |
 | ISO   | [Link](https://get.mirantis.com/bootc-mke3/images/bootc-mke3-r9-bare-mcr25.0-mke3.8-generic.iso)      | **Generic** ISO without any customisation. See [this document](docs/iso-editions.md#generic-image-customisation.md) to get the details on how to properly customise it | MCR 25.0.14.2 / MKE 3.8.10 |
 | QCOW2 | [Link](https://get.mirantis.com/bootc-mke3/images/bootc-mke3-r9-cloud-mcr25.0-mke3.8.qcow2)      | Standard QEMU/KVM bootable image | MCR 25.0.14.2 / MKE 3.8.10 |
+
+> [!NOTE]
+> **Simple** ISO edition is used mostly for demo/test purposes. For production-grade clusters consider susing **Generic** ISO.
+
 ## Installation
 
 Installation in this document refers to the process of deploying Mirantis Kubernetes Engine on top of already provisioned machines (VMs or baremetal). 

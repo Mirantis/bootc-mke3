@@ -1,24 +1,33 @@
 # Provisioning
 
-Provisioning is the process of preparing a cluster of `bootc-mke3` compute nodes in a network cluster that can support the Mirantis products.
+Provisioning is the process of preparing cluster infrastructure that meets the requirements to be used for `bootc-mke3` installation.
 
-# Components of the cluster
+# Infrastructure 
+
+## Registry
+
+`bootc-mke3` represents a release via OCI image. The registry is used to store and distribute such OCI images.
+
+For a use cases where cluster machines has access to the internet, official Mirantis `bootc-mke3` OCI images are stored in public accessible MSR registry (registry.mirantis.com) and can be used by anyone.
+
+For production-grade air-gapped clusters, users should have their own registry that can be accessed by the cluster machines. This registry should contain `bootc-mke3` OCI images with desired version of products. The way of obtaining the image can vary, but the most common way is to set up a mirroring from official Mirantis registry (registry.mirantis.com).
 
 ## Machines
 
-One or more compute machine nodes
+Cluster should consists of one or more compute machine nodes. In order to use `bootc-mke3`, machines should meet following requirements:
 
-1. All machines must use the `bootc-mke3` source base (image)
-2. All machines can be connected to by the installer, using any valid ansible connection method
-3. All machines meet the minimum product requirements for the used Mirantis products: memory, disk, machine-firewall
+1. All machines must use the `bootc-mke3` source base (image). For available images see [Assets section](../README.md#assets)
+
+> [!NOTE]
+> **Simple** ISO edition is used mostly for demo/test purposes. For production-grade clusters consider susing **Generic** ISO. QCOW2 is considered production-grade by default, although it is user's responsiblity to customise it in a proper and secure way.
+
+2. All machines meet MKE hardware requirements. For the list of requirements, please see Mirantis Kubernetes Engine official documentation pages, [hardware requirements section](https://docs.mirantis.com/mke/3.8/common/mke-hw-reqs.html)
 
 ### Machine connection
 
 In order for the installer to interact with the cluster, the ansible tooling must be able to connect to the machines. As ansible has a flexible system for connecting to machines, a wide variety of [options are available](https://docs.ansible.com/ansible/latest/inventory_guide/connection_details.html).
 
-Machine users used for installation and upgrading will need to be able to escalate privilege. This is done using sudo on `bootc-mke3`, so sudo will need to be configured on the machine.
-
-* SSH is the most common connection method, so each machine should have a system user, with acceptible connection method (ssh keys), with sudo access configured *
+Preferred way of machine connection is SSH with paswordless user that has sudo access.
 
 ## Network 
 
