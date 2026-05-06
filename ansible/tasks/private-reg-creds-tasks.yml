@@ -1,0 +1,64 @@
+# Reads vars/reg-creds from the controller, builds a containers-auth.json
+# payload, and writes it to /etc/ostree/auth.json on the remote host.
+#
+# Expected reg-creds format (one entry per line):
+#   registry username password
+# Lines beginning with '#' and blank lines are ignored.
+
+- name: Load registry credential lines from controller
+  ansible.builtin.set_fact:
+    # Strip blanks and comments on the controller; never ship them to the host.
+    _reg_creds_lines: >-
+      {{
+        lookup('file', 'vars/reg-creds')
+          .splitlines()
+          | reject('match', '^\\s*(#.*)?$')
+          | list
+      }}
+
+# Fail early with a human-readable message rather than an index-error mid-loop.
+- name: Validate each credential line has exactly three fields
+  ansible.builtin.assert:
+    that: item.split() | length == 3
+    fail_msg: >-
+      Malformed line in vars/reg-creds: "{{ item }}"
+      Expected: registry username password (three space-separated fields)
+  loop: "{{ _reg_creds_lines }}"
+
+- name: Build auths mapping (registry → base64-encoded user:pass)
+  ansible.builtin.set_fact:
+    # Accumulate into a dict across loop iterations.
+    # b64encode produces a standard base64 string, matching what
+    # `podman login` / `docker login` write into auth.json.
+    _reg_auths: >-
+      {{
+        _reg_auths | default({}) | combine({
+          item.split()[0]: {
+            'auth': (item.split()[1] ~ ':' ~ item.split()[2]) | b64encode
+          }
+        })
+      }}
+  loop: "{{ _reg_creds_lines }}"
+  no_log: true  # credentials must not appear in play output
+
+- name: Ensure /etc/ostree directory exists
+  ansible.builtin.file:
+    path: /etc/ostree
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  become: true
+
+- name: Write /etc/ostree/auth.json
+  ansible.builtin.copy:
+    # to_nice_json produces indented output; a trailing newline keeps the
+    # file POSIX-compliant and diff-friendly.
+    content: "{{ {'auths': _reg_auths | default({})} | to_nice_json }}\n"
+    dest: /etc/ostree/auth.json
+    owner: root
+    group: root
+    # 0600: credentials at rest must not be world-readable.
+    mode: '0600'
+  become: true
+  no_log: true

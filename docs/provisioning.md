@@ -61,3 +61,5 @@ Requirements for the registry credentials:
 
 1. Credentials should be stored in the file and following [containers registry authentication file syntax](https://github.com/containers/image/blob/main/docs/containers-auth.json.5.md)
 2. File should be stored as `/etc/ostree/auth.json`
+
+You can also use [existing ansible playbook](../ansible/reg-creds-playbook.yml) to perform this operation.

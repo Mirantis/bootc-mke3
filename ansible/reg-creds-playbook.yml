@@ -1,0 +1,18 @@
+# Distributes container registry credentials to all hosts.
+#
+# Reads vars/reg-creds from the Ansible controller, encodes each entry as
+# base64(username:password), and writes /etc/ostree/auth.json in the format
+# described by containers-auth.json(5):
+# https://github.com/containers/image/blob/main/docs/containers-auth.json.5.md
+#
+# Usage:
+#   ansible-playbook reg-creds-playbook.yml
+#
+# To target a subset of hosts:
+#   ansible-playbook reg-creds-playbook.yml --limit managers
+
+- name: Configure container registry authentication
+  hosts: all
+  gather_facts: false
+  tasks:
+    - ansible.builtin.include_tasks: tasks/private-reg-creds-tasks.yml
