@@ -17,8 +17,8 @@ Before starting upgrade procedure, you can specify custom values for upgrade ope
 
 Additionally, you can perform MCR/OS upgrade in one of the two ways: 
 
-1. Upgrade to the latest version of the current image tag. To do so, leave `bootc_image_ref` unchanged or empty in `upgrade-vars.yaml`.
-2. Switch to a specific image and/or tag. To do so, update `bootc_image_ref` in `upgrade-vars.yaml` with the full OCI image URL, including the image tag. If you're planning to use/switch to a private registry, please add corresponding credenitals to machines, using [this ansible playbook](../../ansible/reg-creds-playbook.yml).
+1. Upgrade to the latest version of the current image tag. To do so, leave `bootc_image_ref` unchanged or empty in `vars/upgrade-vars.yml`.
+2. Switch to a specific image and/or tag. To do so, update `bootc_image_ref` in `vars/upgrade-vars.yml` with the full OCI image URL, including the image tag. If you're planning to use/switch to a private registry, please add corresponding credentials to machines, using [this ansible playbook](../../ansible/reg-creds-playbook.yml).
 
 Once all the variables are set (if needed), perform next two steps:
 
