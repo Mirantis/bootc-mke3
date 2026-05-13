@@ -15,15 +15,17 @@
           | reject('match', '^\\s*(#.*)?$')
           | list
       }}
+  no_log: true
 
 # Fail early with a human-readable message rather than an index-error mid-loop.
 - name: Validate each credential line has exactly three fields
   ansible.builtin.assert:
     that: item.split() | length == 3
     fail_msg: >-
-      Malformed line in vars/reg-creds: "{{ item }}"
+      Malformed line in vars/reg-creds.
       Expected: registry username password (three space-separated fields)
   loop: "{{ _reg_creds_lines }}"
+  no_log: true
 
 - name: Build auths mapping (registry → base64-encoded user:pass)
   ansible.builtin.set_fact:
