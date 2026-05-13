@@ -61,3 +61,21 @@ Requirements for the registry credentials:
 
 1. Credentials should be stored in the file and following [containers registry authentication file syntax](https://github.com/containers/image/blob/main/docs/containers-auth.json.5.md)
 2. File should be stored as `/etc/ostree/auth.json`
+
+You can also use [existing ansible playbook](../ansible/reg-creds-playbook.yml) to perform this operation.
+
+### Ansible playbook setup
+
+The playbook reads credentials from `ansible/vars/reg-creds`, which is excluded from version control. Before running the playbook, create the file from the provided template:
+
+```bash
+cp ansible/vars/reg-creds.example ansible/vars/reg-creds
+```
+
+Then edit `ansible/vars/reg-creds` and replace `<username>` and `<password>` with your actual registry credentials. Each line follows the format:
+
+```
+registry.mirantis.com <username> <password>
+```
+
+Add one line per registry. The file is gitignored and will never be committed.

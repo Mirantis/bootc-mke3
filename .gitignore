@@ -29,3 +29,7 @@ override.tf.json
 .terraformrc
 terraform.rc
 .terraform.lock.hcl
+
+
+# Ansible registry credentials — machine-local, never commit
+ansible/vars/reg-creds
