@@ -41,9 +41,12 @@
     - ansible.builtin.include_tasks: tasks/mke-install-tasks.yml
 
 
-- name: Disable sshd on all hosts after MKE installation
+- name: Disable and stop sshd on all hosts after MKE installation
   hosts: all
   gather_facts: false
+  # When sshd is stopped the SSH transport drops before Ansible reads the result.
+  # ignore_unreachable suppresses the resulting connection error at the play level.
+  ignore_unreachable: true
   vars_files:
     - vars/common-vars.yml
   tasks:

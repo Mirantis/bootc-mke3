@@ -1,5 +1,10 @@
-- name: Disable sshd (takes effect on next boot, does not drop current connections)
+- name: Disable and stop sshd
   ansible.builtin.systemd:
     name: sshd
+    state: stopped
     enabled: false
   become: true
+  # ignore_errors covers the case where the module itself errors out.
+  # The SSH transport drops the moment sshd stops; ignore_unreachable on the
+  # play prevents Ansible from surfacing that as a fatal connection failure.
+  ignore_errors: true
