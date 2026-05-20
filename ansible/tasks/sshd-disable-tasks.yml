@@ -1,0 +1,6 @@
+- name: Disable and stop sshd
+  ansible.builtin.systemd:
+    name: sshd
+    state: stopped
+    enabled: false
+  become: true
