@@ -58,3 +58,14 @@
     - name: Run upgrade MKE tasks
       ansible.builtin.include_tasks: tasks/mke-upgrade-tasks.yml
       when: target_mke_version.stdout > current_mke_version.stdout or bootc_image_ref != ''
+
+
+- name: Disable and stop sshd on all hosts after MKE upgrade
+  hosts: all
+  gather_facts: false
+  ignore_unreachable: true
+  vars_files:
+    - vars/common-vars.yml
+  tasks:
+    - ansible.builtin.include_tasks: tasks/sshd-disable-tasks.yml
+      when: disable_sshd_after_install | bool
