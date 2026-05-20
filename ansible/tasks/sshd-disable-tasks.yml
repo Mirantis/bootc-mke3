@@ -1,6 +1,5 @@
-- name: Stop and disable sshd
+- name: Disable sshd (takes effect on next boot, does not drop current connections)
   ansible.builtin.systemd:
     name: sshd
-    state: stopped
     enabled: false
   become: true
