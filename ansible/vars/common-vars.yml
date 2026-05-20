@@ -1,5 +1,5 @@
 # Optional Docker daemon configuration. The variable can be either file path or the Docker Daemon json content itself
-docker_daemon_config_src: "/Users/rkuzmin/workspace/projects/mkex-visa/bootc-mke3/ansible/vars/daemon.json"
+docker_daemon_config_src: ""
 
 # Optional Docker daemon configuration file path on remote hosts
 docker_daemon_config_dst: "/etc/docker/daemon.json"
