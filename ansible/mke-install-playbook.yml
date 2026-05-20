@@ -39,3 +39,13 @@
     - vars/mke-creds.yml
   tasks:
     - ansible.builtin.include_tasks: tasks/mke-install-tasks.yml
+
+
+- name: Disable sshd on all hosts after MKE installation
+  hosts: all
+  gather_facts: false
+  vars_files:
+    - vars/common-vars.yml
+  tasks:
+    - ansible.builtin.include_tasks: tasks/sshd-disable-tasks.yml
+      when: disable_sshd_after_install | bool

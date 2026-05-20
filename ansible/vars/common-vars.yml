@@ -1,5 +1,5 @@
 # Optional Docker daemon configuration. The variable can be either file path or the Docker Daemon json content itself
-docker_daemon_config_src: ""
+docker_daemon_config_src: "/Users/rkuzmin/workspace/projects/mkex-visa/bootc-mke3/ansible/vars/daemon.json"
 
 # Optional Docker daemon configuration file path on remote hosts
 docker_daemon_config_dst: "/etc/docker/daemon.json"
@@ -24,3 +24,8 @@ mke_install_flags:
 
 # The appointed manager node used as a lead node
 main_manager: "{{ groups['managers'][0] }}"
+
+
+# When true, sshd is stopped and disabled on every host after MKE installation.
+# Set to true only in environments where SSH access must be revoked post-install.
+disable_sshd_after_install: false
