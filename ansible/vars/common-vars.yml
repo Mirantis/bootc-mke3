@@ -26,6 +26,6 @@ mke_install_flags:
 main_manager: "{{ groups['managers'][0] }}"
 
 
-# When true, sshd is stopped and disabled on every host after MKE installation.
+# When true, sshd is stopped and disabled on every host at the end of the operation.
 # Set to true only in environments where SSH access must be revoked post-install.
 disable_sshd_after_install: false
