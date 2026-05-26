@@ -1,0 +1,26 @@
+# Fetches the MKE3 client bundle from the MKE API and saves it locally.
+#
+# The bundle is a ZIP file containing TLS certificates, a kubeconfig, and
+# shell environment scripts required to issue kubectl/docker commands against
+# the cluster as an authenticated user.
+#
+# Credentials are read from vars/mke-creds.yml (admin_user, admin_pass).
+# The MKE endpoint (mke_url) is read from the inventory all.vars.
+#
+# Usage:
+#   ansible-playbook mke-client-bundle-playbook.yml
+#
+# To override the local destination directory:
+#   ansible-playbook mke-client-bundle-playbook.yml -e bundle_dest=/tmp/my-bundle
+
+- name: Obtain MKE3 client bundle
+  hosts: managers
+  gather_facts: false
+  vars_files:
+    - vars/mke-creds.yml
+  vars:
+    # Directory on the Ansible controller where the bundle ZIP is written.
+    # Override with -e bundle_dest=<path> as needed.
+    bundle_dest: "{{ playbook_dir }}/mke-bundle"
+  tasks:
+    - ansible.builtin.include_tasks: tasks/mke-client-bundle-tasks.yml
