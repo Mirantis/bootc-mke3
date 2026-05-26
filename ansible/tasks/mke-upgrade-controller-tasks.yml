@@ -5,9 +5,10 @@
 #   2. Deploy System Upgrade Controller (SUC) when deploy_suc is true.
 #   3. Patch SUC deployment with node affinity so it schedules only on
 #      control-plane / master nodes running Linux.
-#   4. Grant system-upgrade-controller service account the privileged attribute
+#   4. Patch SUC ConfigMap to extend the job active deadline to 3600 s.
+#   5. Grant system-upgrade-controller service account the privileged attribute
 #      in MKE cluster config when deploy_suc is true (UCPAuthorization allowlist).
-#   5. Apply the mke-upgrade-controller static manifests in the order mandated by
+#   6. Apply the mke-upgrade-controller static manifests in the order mandated by
 #      the upstream README (CRD → namespace → serviceaccount → rbac → deployment).
 #
 # Required vars (inherited from the enclosing play):
@@ -75,6 +76,27 @@
   run_once: true
   register: _suc_patch
   changed_when: "'patched' in _suc_patch.stdout"
+
+- name: Patch SUC ConfigMap to extend job active deadline
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - patch
+      - configmap
+      - default-controller-env
+      - -n
+      - system-upgrade
+      - --kubeconfig
+      - "{{ bundle_dest }}/kube.yml"
+      - --type
+      - merge
+      - --patch
+      - '{"data":{"SYSTEM_UPGRADE_JOB_ACTIVE_DEADLINE_SECONDS":"3600"}}'
+  when: deploy_suc | bool
+  delegate_to: localhost
+  run_once: true
+  register: _suc_configmap_patch
+  changed_when: "'patched' in _suc_configmap_patch.stdout"
 
 
 - ansible.builtin.include_tasks: tasks/suc-priv-grant-tasks.yml
