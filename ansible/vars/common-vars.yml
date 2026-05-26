@@ -28,4 +28,14 @@ main_manager: "{{ groups['managers'][0] }}"
 
 # When true, sshd is stopped and disabled on every host at the end of the operation.
 # Set to true only in environments where SSH access must be revoked post-install.
-disable_sshd_after_install: false
+disable_sshd_after_install: true
+
+# When true, the System Upgrade Controller (SUC) is deployed to the cluster
+# before mke-upgrade-controller. Required when spec.os or spec.product.type=mke4
+# is used in a ClusterUpgrade CR.
+# Ref: https://github.com/rancher/system-upgrade-controller
+deploy_suc: true
+
+# Service account granted the 'privileged' pod-security attribute in the MKE
+# UCPAuthorization allowlist when deploy_suc is true. Format: namespace:name.
+suc_service_account: "system-upgrade:system-upgrade"

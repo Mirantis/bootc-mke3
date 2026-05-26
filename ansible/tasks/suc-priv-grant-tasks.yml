@@ -1,0 +1,103 @@
+# Grants the permissions required for the System Upgrade Controller (SUC) to
+# operate on an MKE cluster:
+#
+#  1. Pod-security attributes — adds the SA to the UCPAuthorization allowlist
+#     so its pods may run with privileged, hostIPC, hostNetwork, hostPID,
+#     hostBindMounts, and kernelCapabilities.
+#     Mechanism: GET /api/ucp/config-toml → merge [cluster_config] → PUT.
+#
+#  2. Node scheduling — sets enable_admin_ucp_scheduling = true in
+#     [scheduling_configuration] so all authenticated users and service accounts
+#     can schedule on manager and MSR nodes.
+#     Mechanism: GET /api/ucp/config-toml → set key → PUT.
+#
+#  3. Swarm scheduling grant — grants the Scheduler role to all authenticated
+#     users on the root swarm collection.
+#     Mechanism: PUT /collectionGrants/authenticated/swarm/scheduler.
+#
+# Required vars (inherited from the enclosing play):
+#   mke_url             – MKE load-balancer IP/hostname (from inventory all.vars)
+#   _mke_login          – registered result of the /auth/login URI task
+#                         (set by mke-client-bundle-tasks.yml earlier in the same play)
+#   suc_service_account – namespace:name of the SA to grant privileged (from vars/common-vars.yml)
+#
+# Ref: https://docs.mirantis.com/mke/3.9/ops/deploy-apps-k8s/admission-controllers-for-access.html
+# Ref: https://success.docker.com/article/update-enable-user-ucp-scheduling-setting
+
+- name: Create temp file for MKE cluster config
+  ansible.builtin.tempfile:
+    suffix: .toml
+  register: _mke_config_tmp
+  delegate_to: localhost
+  run_once: true
+
+- name: Download current MKE cluster config
+  ansible.builtin.uri:
+    url: "https://{{ mke_url }}/api/ucp/config-toml"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ _mke_login.json.auth_token }}"
+    validate_certs: false
+    dest: "{{ _mke_config_tmp.path }}"
+    status_code: 200
+  delegate_to: localhost
+  run_once: true
+  no_log: true   # Authorization header contains the bearer token
+
+- name: Merge SUC privilege grant into MKE cluster config
+  ansible.builtin.command: >-
+    python3 {{ playbook_dir }}/tasks/helpers/suc_priv_grant.py {{ _mke_config_tmp.path }} {{ suc_service_account }}
+  delegate_to: localhost
+  run_once: true
+  # The script is an idempotent file mutation; Ansible cannot detect a diff here.
+  changed_when: false
+
+- name: Read modified MKE cluster config
+  ansible.builtin.slurp:
+    src: "{{ _mke_config_tmp.path }}"
+  register: _mke_config_modified
+  delegate_to: localhost
+  run_once: true
+
+- name: Upload modified MKE cluster config
+  ansible.builtin.uri:
+    url: "https://{{ mke_url }}/api/ucp/config-toml"
+    method: PUT
+    headers:
+      Authorization: "Bearer {{ _mke_login.json.auth_token }}"
+      Content-Type: application/toml
+    # slurp returns base64; decode to the raw TOML string for the request body.
+    body: "{{ _mke_config_modified.content | b64decode }}"
+    validate_certs: false
+    status_code: 200
+  delegate_to: localhost
+  run_once: true
+  no_log: true   # Authorization header contains the bearer token
+
+- name: Remove temp MKE cluster config
+  ansible.builtin.file:
+    path: "{{ _mke_config_tmp.path }}"
+    state: absent
+  delegate_to: localhost
+  run_once: true
+
+
+# --- Node scheduling grant ---
+
+- name: Grant Scheduler role to all authenticated users on swarm collection
+  ansible.builtin.uri:
+    # Grant triple is encoded entirely in the URL path:
+    #   subject = authenticated  (built-in alias for all authenticated users)
+    #   object  = swarm          (root Swarm collection — built-in alias)
+    #   role    = scheduler      (built-in alias)
+    url: "https://{{ mke_url }}/collectionGrants/authenticated/swarm/scheduler"
+    method: PUT
+    headers:
+      Authorization: "Bearer {{ _mke_login.json.auth_token }}"
+    validate_certs: false
+    status_code: [200, 201]  # 201 on first create, 200 on idempotent repeat
+  delegate_to: localhost
+  run_once: true
+  no_log: true   # Authorization header contains the bearer token
+  changed_when: _scheduler_grant.status == 201
+  register: _scheduler_grant
