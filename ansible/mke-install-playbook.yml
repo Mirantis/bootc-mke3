@@ -40,7 +40,6 @@
   tasks:
     - ansible.builtin.include_tasks: tasks/mke-install-tasks.yml
 
-
 - name: Disable and stop sshd on all hosts after MKE installation
   hosts: all
   gather_facts: false
@@ -52,3 +51,5 @@
   tasks:
     - ansible.builtin.include_tasks: tasks/sshd-disable-tasks.yml
       when: disable_sshd_after_install | bool
+
+- ansible.builtin.import_playbook: mke-post-install-playbook.yml
