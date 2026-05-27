@@ -111,6 +111,7 @@
     - https://raw.githubusercontent.com/nekwar/mke-upgrade-controller/feature/mke3-upgrade-support/deploy/rbac.yaml
     - https://raw.githubusercontent.com/nekwar/mke-upgrade-controller/feature/mke3-upgrade-support/deploy/deployment.yaml
   delegate_to: localhost
+  when: deploy_mke_upgrade_controller | bool
   run_once: true
   # changed_when: false would suppress false positives, but kubectl apply
   # returns "configured" / "unchanged" reliably — let Ansible report truth.

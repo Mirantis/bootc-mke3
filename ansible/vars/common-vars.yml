@@ -39,3 +39,7 @@ deploy_suc: true
 # Service account granted the 'privileged' pod-security attribute in the MKE
 # UCPAuthorization allowlist when deploy_suc is true. Format: namespace:name.
 suc_service_account: "system-upgrade:system-upgrade"
+
+
+# When true, the mke-upgrade-controller is installed on the cluster.
+deploy_mke_upgrade_controller: true
