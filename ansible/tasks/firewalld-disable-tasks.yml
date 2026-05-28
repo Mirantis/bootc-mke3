@@ -1,0 +1,6 @@
+- name: Stop and disable firewalld
+  ansible.builtin.systemd:
+    name: firewalld
+    state: stopped
+    enabled: false
+  become: true
