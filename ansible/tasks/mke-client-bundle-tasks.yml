@@ -1,0 +1,77 @@
+# Obtains the MKE3 client bundle from the MKE API and saves it to the
+# Ansible controller.
+#
+# Required vars (resolved before this file is included):
+#   admin_user  – MKE administrator username
+#   admin_pass  – MKE administrator password
+#   mke_url     – MKE load-balancer / manager IP or hostname (no scheme)
+#   bundle_dest – local directory on the controller where the bundle is written
+#
+# All tasks delegate to localhost so the bundle lands on the controller, not on
+# a remote manager.  run_once: true prevents redundant work when the play
+# targets multiple managers.
+
+- name: Authenticate to MKE and obtain a short-lived auth token
+  ansible.builtin.uri:
+    url: "https://{{ mke_url }}/auth/login"
+    method: POST
+    body_format: json
+    body:
+      username: "{{ admin_user }}"
+      password: "{{ admin_pass }}"
+    validate_certs: false
+    status_code: 200
+  register: _mke_login
+  until: _mke_login.status == 200
+  retries: 12
+  delay: 10
+  delegate_to: localhost
+  run_once: true
+  no_log: true   # credentials must not appear in play output
+
+- name: Ensure bundle destination directory exists on controller
+  ansible.builtin.file:
+    path: "{{ bundle_dest }}"
+    state: directory
+    mode: "0700"   # bundle contains TLS keys; restrict to owner only
+  delegate_to: localhost
+  run_once: true
+
+- name: Download client bundle ZIP from MKE API
+  ansible.builtin.uri:
+    url: "https://{{ mke_url }}/api/clientbundle"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ _mke_login.json.auth_token }}"
+    validate_certs: false
+    dest: "{{ bundle_dest }}/client-bundle.zip"
+    # Return binary content directly to dest; status 200 is the only success.
+    status_code: 200
+  register: _bundle_download
+  until: _bundle_download.status == 200
+  retries: 12
+  delay: 10
+  delegate_to: localhost
+  run_once: true
+  no_log: true   # Authorization header contains the bearer token
+
+- name: Unzip client bundle
+  ansible.builtin.unarchive:
+    src: "{{ bundle_dest }}/client-bundle.zip"
+    dest: "{{ bundle_dest }}"
+    remote_src: true   # ZIP is already on the controller (delegate_to: localhost)
+  delegate_to: localhost
+  run_once: true
+
+- name: Remove client bundle ZIP
+  ansible.builtin.file:
+    path: "{{ bundle_dest }}/client-bundle.zip"
+    state: absent
+  delegate_to: localhost
+  run_once: true
+
+- name: Report bundle location
+  ansible.builtin.debug:
+    msg: "Client bundle extracted to {{ bundle_dest }}"
+  delegate_to: localhost
+  run_once: true

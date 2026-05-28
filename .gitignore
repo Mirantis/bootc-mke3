@@ -33,3 +33,6 @@ terraform.rc
 
 # Ansible registry credentials — machine-local, never commit
 ansible/vars/reg-creds
+
+# MKE3 client bundle — contains TLS keys, never commit
+ansible/mke-bundle/

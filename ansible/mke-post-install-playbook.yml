@@ -1,0 +1,25 @@
+# Post-installation MKE configuration that requires no SSH access to cluster nodes.
+#
+# All operations run on the Ansible controller (hosts: localhost) and interact
+# with the cluster exclusively through the MKE REST API and the Kubernetes API.
+# This playbook can therefore be run independently after SSH has been disabled.
+#
+# Usage:
+#   ansible-playbook mke-post-install-playbook.yml
+#
+# To override the local bundle directory:
+#   ansible-playbook mke-post-install-playbook.yml -e bundle_dest=/tmp/my-bundle
+
+- name: Install MKE upgrade controller
+  hosts: localhost
+  gather_facts: false
+  vars_files:
+    - vars/common-vars.yml
+    - vars/mke-creds.yml
+  vars:
+    # mke_url lives in inventory all.vars; pull it from a real host's hostvars
+    # since localhost is not part of the inventory group.
+    mke_url: "{{ hostvars[groups['managers'][0]]['mke_url'] }}"
+    bundle_dest: "{{ playbook_dir }}/mke-bundle"
+  tasks:
+    - ansible.builtin.include_tasks: tasks/mke-upgrade-controller-tasks.yml

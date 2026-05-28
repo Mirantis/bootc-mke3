@@ -1,0 +1,129 @@
+# Installs the mke-upgrade-controller using the MKE3 client bundle kubeconfig.
+#
+# Steps:
+#   1. Fetch and extract the client bundle (kube.yml is the kubeconfig).
+#   2. Deploy System Upgrade Controller (SUC) when deploy_suc is true.
+#   3. Patch SUC deployment with node affinity so it schedules only on
+#      control-plane / master nodes running Linux.
+#   4. Patch SUC ConfigMap to extend the job active deadline to 3600 s.
+#   5. Grant system-upgrade-controller service account the privileged attribute
+#      in MKE cluster config when deploy_suc is true (UCPAuthorization allowlist).
+#   6. Install mke-upgrade-controller via Helm chart when deploy_mke_upgrade_controller is true.
+#
+# Required vars (inherited from the enclosing play):
+#   admin_user  – MKE administrator username       (from vars/mke-creds.yml)
+#   admin_pass  – MKE administrator password       (from vars/mke-creds.yml)
+#   mke_url     – MKE load-balancer IP/hostname    (from inventory all.vars)
+#   bundle_dest – local directory for the bundle   (default: playbook_dir/mke-bundle)
+#   deploy_suc  – when true, SUC is deployed before mke-upgrade-controller (from vars/common-vars.yml)
+#   deploy_mke_upgrade_controller       – when true, installs mke-upgrade-controller (from vars/common-vars.yml)
+#   mke_upgrade_controller_release_name – Helm release name
+#   mke_upgrade_controller_chart        – OCI chart URL
+#   mke_upgrade_controller_version      – chart version
+#   mke_upgrade_controller_namespace    – target namespace (created if absent)
+#
+# Ref: https://github.com/nekwar/mke-upgrade-controller#with-helm
+# Ref: https://github.com/rancher/system-upgrade-controller
+
+- ansible.builtin.include_tasks: tasks/mke-client-bundle-tasks.yml
+
+- name: Deploy System Upgrade Controller (SUC)
+  ansible.builtin.command: >-
+    kubectl apply --kubeconfig {{ bundle_dest }}/kube.yml -f {{ item }}
+  loop:
+    - https://github.com/rancher/system-upgrade-controller/releases/latest/download/crd.yaml
+    - https://github.com/rancher/system-upgrade-controller/releases/latest/download/system-upgrade-controller.yaml
+  when: deploy_suc | bool
+  delegate_to: localhost
+  run_once: true
+  changed_when: "'configured' in _suc_apply.stdout or 'created' in _suc_apply.stdout"
+  register: _suc_apply
+
+- name: Patch SUC deployment with control-plane node affinity
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - patch
+      - deployment
+      - system-upgrade-controller
+      - -n
+      - system-upgrade
+      - --kubeconfig
+      - "{{ bundle_dest }}/kube.yml"
+      - --type
+      - merge
+      - --patch
+      - "{{ _suc_node_affinity_patch | to_json }}"
+  vars:
+    _suc_node_affinity_patch:
+      spec:
+        template:
+          spec:
+            affinity:
+              nodeAffinity:
+                requiredDuringSchedulingIgnoredDuringExecution:
+                  nodeSelectorTerms:
+                    - matchExpressions:
+                        - key: node-role.kubernetes.io/control-plane
+                          operator: Exists
+                        - key: kubernetes.io/os
+                          operator: In
+                          values: [linux]
+                    - matchExpressions:
+                        - key: node-role.kubernetes.io/master
+                          operator: Exists
+                        - key: kubernetes.io/os
+                          operator: In
+                          values: [linux]
+  when: deploy_suc | bool
+  delegate_to: localhost
+  run_once: true
+  register: _suc_patch
+  changed_when: "'patched' in _suc_patch.stdout"
+
+- name: Patch SUC ConfigMap to extend job active deadline
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - patch
+      - configmap
+      - default-controller-env
+      - -n
+      - system-upgrade
+      - --kubeconfig
+      - "{{ bundle_dest }}/kube.yml"
+      - --type
+      - merge
+      - --patch
+      - '{"data":{"SYSTEM_UPGRADE_JOB_ACTIVE_DEADLINE_SECONDS":"3600"}}'
+  when: deploy_suc | bool
+  delegate_to: localhost
+  run_once: true
+  register: _suc_configmap_patch
+  changed_when: "'patched' in _suc_configmap_patch.stdout"
+
+
+- ansible.builtin.include_tasks: tasks/suc-priv-grant-tasks.yml
+  when: deploy_suc | bool
+- name: Install mke-upgrade-controller via Helm
+  ansible.builtin.command:
+    argv:
+      - helm
+      - upgrade
+      - --install
+      - "{{ mke_upgrade_controller_release_name }}"
+      - "{{ mke_upgrade_controller_chart }}"
+      - --version
+      - "{{ mke_upgrade_controller_version }}"
+      - --namespace
+      - "{{ mke_upgrade_controller_namespace }}"
+      - --create-namespace
+      - --kubeconfig
+      - "{{ bundle_dest }}/kube.yml"
+  when: deploy_mke_upgrade_controller | bool
+  delegate_to: localhost
+  run_once: true
+  register: _helm_install
+  # helm upgrade --install always reports "upgraded" even when nothing changed;
+  # there is no reliable stdout signal for a true no-op.
+  changed_when: false
