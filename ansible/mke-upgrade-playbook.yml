@@ -1,11 +1,16 @@
 - name: Setup up Docker on remote hosts
   ansible.builtin.import_playbook: mcr-setup-docker.yml
 
-- name: Open required MKE ports
+- name: Ports management
   gather_facts: false
   hosts: all
+  vars_files:
+    - vars/common-vars.yml
   tasks:
+    - ansible.builtin.include_tasks: tasks/firewalld-disable-tasks.yml
+      when: disable_firewalld | bool
     - ansible.builtin.include_tasks: tasks/mke-open-ports-tasks.yml
+      when: not disable_firewalld | bool
 
 - name: Backup MKE before upgrade
   ansible.builtin.import_playbook: mke-backup-playbook.yml

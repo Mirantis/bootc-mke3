@@ -30,6 +30,12 @@ main_manager: "{{ groups['managers'][0] }}"
 # Set to true only in environments where SSH access must be revoked post-install.
 disable_sshd_after_install: true
 
+# When true, firewalld is stopped and disabled on every host instead of opening
+# individual ports. Use in environments where the network perimeter is managed
+# externally and a host-level firewall adds no value or causes interference.
+# When false (default), the standard per-service port rules are applied via firewalld.
+disable_firewalld: false
+
 # When true, the System Upgrade Controller (SUC) is deployed to the cluster
 # before mke-upgrade-controller. Required when spec.os or spec.product.type=mke4
 # is used in a ClusterUpgrade CR.
@@ -46,6 +52,6 @@ deploy_mke_upgrade_controller: true
 
 # mke-upgrade-controller Helm chart coordinates.
 mke_upgrade_controller_release_name: "mke-upgrade-controller"
-mke_upgrade_controller_chart: "oci://registry.ci.mirantis.com/bootc-mirantis/mke-upgrade-controller"
+mke_upgrade_controller_chart: "oci://registry.ci.mirantis.com/bootc-mirantis/charts/mke-upgrade-controller"
 mke_upgrade_controller_version: "0.1.0"
 mke_upgrade_controller_namespace: "mke"
