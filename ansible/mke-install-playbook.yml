@@ -45,16 +45,37 @@
   tasks:
     - ansible.builtin.include_tasks: tasks/mke-install-tasks.yml
 
-- name: Disable and stop sshd on all hosts after MKE installation
+
+- name: Harden hosts after MKE installation
   hosts: all
   gather_facts: false
-  # When sshd is stopped the SSH transport drops before Ansible reads the result.
-  # ignore_unreachable suppresses the resulting connection error at the play level.
+  # ignore_unreachable: stopping sshd drops the SSH transport before Ansible reads
+  # the result; this suppresses the resulting connection error at the play level.
   ignore_unreachable: true
   vars_files:
     - vars/common-vars.yml
   tasks:
+    - name: Revoke ansible user sudo privileges and disable sshd
+      # Both operations must execute inside a single sudo escalation.
+      # Revoking sudo first would invalidate the subsequent become: true needed
+      # for sshd; stopping sshd first drops SSH before revocation can run.
+      # Running as a single shell task means the process is already root — removing
+      # the user from wheel/sudo does not affect the running elevated shell.
+      ansible.builtin.shell: |
+        gpasswd -d {{ ansible_user }} wheel 2>/dev/null || true
+        gpasswd -d {{ ansible_user }} sudo  2>/dev/null || true
+        sed -i '/^{{ ansible_user }}[[:space:]]/d' /etc/sudoers
+        find /etc/sudoers.d/ -maxdepth 1 -type f \
+          -exec sed -i '/^{{ ansible_user }}[[:space:]]/d' {} \;
+        systemctl disable --now sshd
+      become: true
+      changed_when: false
+      when: revoke_sudo_after_install | bool and disable_sshd_after_install | bool
+
+    - ansible.builtin.include_tasks: tasks/sudo-revoke-tasks.yml
+      when: revoke_sudo_after_install | bool and not disable_sshd_after_install | bool
+
     - ansible.builtin.include_tasks: tasks/sshd-disable-tasks.yml
-      when: disable_sshd_after_install | bool
+      when: disable_sshd_after_install | bool and not revoke_sudo_after_install | bool
 
 - ansible.builtin.import_playbook: mke-post-install-playbook.yml

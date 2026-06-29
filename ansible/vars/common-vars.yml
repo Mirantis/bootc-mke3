@@ -30,6 +30,11 @@ main_manager: "{{ groups['managers'][0] }}"
 # Set to true only in environments where SSH access must be revoked post-install.
 disable_sshd_after_install: true
 
+# When true, sudo privileges are revoked from ansible_user on every host after
+# MKE installation and before sshd is disabled. Covers wheel group (RHEL/bootc),
+# sudo group (Debian/Ubuntu), and any named /etc/sudoers.d/<ansible_user> drop-in.
+revoke_sudo_after_install: true
+
 # When true, firewalld is stopped and disabled on every host instead of opening
 # individual ports. Use in environments where the network perimeter is managed
 # externally and a host-level firewall adds no value or causes interference.

@@ -1,0 +1,40 @@
+# Revokes sudo privileges from the Ansible connecting user (standalone path —
+# used only when disable_sshd_after_install is false; when both flags are true
+# the revocation and sshd disable are combined into a single sudo escalation in
+# the playbook to avoid a chicken-and-egg: revoking sudo first breaks subsequent
+# become: true calls, while stopping sshd first drops the SSH connection).
+#
+# Three mechanisms are covered, in order from most to least common:
+#   1. wheel group  — standard on RHEL/bootc/cloud-init images (e.g. cloud-user)
+#   2. sudo group   — standard on Debian/Ubuntu images
+#   3. sudoers entries — scrubs every file under /etc/sudoers.d/ and /etc/sudoers
+#      itself; catches cloud-init drop-ins like 90-cloud-init-users that are not
+#      named after the user
+#
+# ansible_user is resolved from the inventory connection variable; no vars_files required.
+# All tasks use become: true since sudoers manipulation itself requires root.
+#
+# failed_when: false — "not a member" and "group not found" are both safe non-errors here.
+# changed_when guards on rc == 0 so the play reports accurate change status.
+
+- name: Remove ansible user from wheel group
+  ansible.builtin.command: "gpasswd -d {{ ansible_user }} wheel"
+  become: true
+  register: _wheel_revoke
+  failed_when: false
+  changed_when: _wheel_revoke.rc == 0
+
+- name: Remove ansible user from sudo group
+  ansible.builtin.command: "gpasswd -d {{ ansible_user }} sudo"
+  become: true
+  register: _sudo_revoke
+  failed_when: false
+  changed_when: _sudo_revoke.rc == 0
+
+- name: Remove ansible user entries from all sudoers files
+  ansible.builtin.shell: |
+    sed -i '/^{{ ansible_user }}[[:space:]]/d' /etc/sudoers
+    find /etc/sudoers.d/ -maxdepth 1 -type f \
+      -exec sed -i '/^{{ ansible_user }}[[:space:]]/d' {} \;
+  become: true
+  changed_when: false
