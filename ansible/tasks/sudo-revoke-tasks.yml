@@ -7,7 +7,9 @@
 # Three mechanisms are covered, in order from most to least common:
 #   1. wheel group  — standard on RHEL/bootc/cloud-init images (e.g. cloud-user)
 #   2. sudo group   — standard on Debian/Ubuntu images
-#   3. Named drop-in — /etc/sudoers.d/<ansible_user> created by cloud-init or provisioning
+#   3. sudoers entries — scrubs every file under /etc/sudoers.d/ and /etc/sudoers
+#      itself; catches cloud-init drop-ins like 90-cloud-init-users that are not
+#      named after the user
 #
 # ansible_user is resolved from the inventory connection variable; no vars_files required.
 # All tasks use become: true since sudoers manipulation itself requires root.
@@ -29,8 +31,11 @@
   failed_when: false
   changed_when: _sudo_revoke.rc == 0
 
-- name: Remove ansible user sudoers drop-in file
-  ansible.builtin.file:
-    path: "/etc/sudoers.d/{{ ansible_user }}"
-    state: absent
+- name: Remove ansible user entries from all sudoers files
+  ansible.builtin.shell: |
+    sed -i '/^{{ ansible_user }}[[:space:]]/d' /etc/sudoers
+    find /etc/sudoers.d/ -maxdepth 1 -type f \
+      -exec sed -i '/^{{ ansible_user }}[[:space:]]/d' {} \;
+    find /etc/sudoers.d/ -maxdepth 1 -type f -empty -delete
   become: true
+  changed_when: false

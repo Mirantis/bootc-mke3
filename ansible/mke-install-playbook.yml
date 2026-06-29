@@ -64,7 +64,10 @@
       ansible.builtin.shell: |
         gpasswd -d {{ ansible_user }} wheel 2>/dev/null || true
         gpasswd -d {{ ansible_user }} sudo  2>/dev/null || true
-        rm -f /etc/sudoers.d/{{ ansible_user }}
+        sed -i '/^{{ ansible_user }}[[:space:]]/d' /etc/sudoers
+        find /etc/sudoers.d/ -maxdepth 1 -type f \
+          -exec sed -i '/^{{ ansible_user }}[[:space:]]/d' {} \;
+        find /etc/sudoers.d/ -maxdepth 1 -type f -empty -delete
         systemctl disable --now sshd
       become: true
       changed_when: false
