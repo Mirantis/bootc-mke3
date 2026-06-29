@@ -67,7 +67,6 @@
         sed -i '/^{{ ansible_user }}[[:space:]]/d' /etc/sudoers
         find /etc/sudoers.d/ -maxdepth 1 -type f \
           -exec sed -i '/^{{ ansible_user }}[[:space:]]/d' {} \;
-        find /etc/sudoers.d/ -maxdepth 1 -type f -empty -delete
         systemctl disable --now sshd
       become: true
       changed_when: false
