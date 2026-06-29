@@ -15,7 +15,12 @@
   ansible.builtin.shell: "{{ hostvars[main_manager]['worker_join_command'].stdout }}"
   when: inventory_hostname not in main_manager and inventory_hostname in groups['managers'] and swarm_status.stdout == 'inactive'
 
+- name: Get Swarm node ID from joining manager
+  ansible.builtin.shell: "docker info --format '{{ '{{' }}.Swarm.NodeID{{ '}}' }}'"
+  register: swarm_node_id
+  when: inventory_hostname not in main_manager and inventory_hostname in groups['managers'] and swarm_status.stdout == 'inactive'
+
 - name: Promote to manager
   delegate_to: "{{ main_manager }}"
-  ansible.builtin.shell: "docker node promote {{ inventory_hostname }}"
+  ansible.builtin.shell: "docker node promote {{ swarm_node_id.stdout }}"
   when: inventory_hostname not in main_manager and inventory_hostname in groups['managers'] and swarm_status.stdout == 'inactive'
