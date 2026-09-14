@@ -18,6 +18,12 @@
   when: mke_external_certs_enabled | bool
   run_once: true
 
+- name: Append the --calico-datastore-type-kdd MKE flag to the list
+  ansible.builtin.set_fact:
+    mke_install_flags: "{{ mke_install_flags + ['--calico-datastore-type-kdd'] }}"
+  when: calico_datastore_type_kdd | bool
+  run_once: true
+
 - name: Get target MKE version
   ansible.builtin.include_tasks: tasks/helpers/get_target_mke_version.yml
 
