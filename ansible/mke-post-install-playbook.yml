@@ -46,3 +46,27 @@
   tasks:
     - name: Install machine-config-controller
       ansible.builtin.include_tasks: tasks/machine-config-controller-tasks.yml
+
+# Runs last, deliberately: cluster-upgrade-controller/machine-config-controller
+# (and SUC, above) each apply CRDs/namespaces/Deployments of their own, and
+# doing so was observed to trigger MKE re-syncing its baseline kube-system
+# manifests — reverting this patch minutes after it was applied and long
+# after its own hold-and-reassert window (tasks/calico-kdd-patch-tasks.yml)
+# had already declared success. Running this after every other mutating
+# step in this playbook means nothing later in the same run can re-trigger
+# that reconciliation and undo the fix.
+- name: Patch calico-kube-controllers service account for KDD
+  hosts: localhost
+  gather_facts: false
+  vars_files:
+    - vars/common-vars.yml
+    - vars/mke-creds.yml
+  vars:
+    # mke_url lives in inventory all.vars; pull it from a real host's hostvars
+    # since localhost is not part of the inventory group.
+    mke_url: "{{ hostvars[groups['managers'][0]]['mke_url'] }}"
+    bundle_dest: "{{ playbook_dir }}/mke-bundle"
+  tasks:
+    - name: Patch calico-kube-controllers service account
+      ansible.builtin.include_tasks: tasks/calico-kdd-patch-tasks.yml
+      when: calico_datastore_type_kdd | bool
