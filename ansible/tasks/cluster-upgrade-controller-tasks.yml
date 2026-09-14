@@ -5,7 +5,10 @@
 #   2. Deploy System Upgrade Controller (SUC) when deploy_suc is true.
 #   3. Patch SUC deployment with node affinity so it schedules only on
 #      control-plane / master nodes running Linux.
-#   4. Patch SUC ConfigMap to extend the job active deadline to 3600 s.
+#   4. Patch SUC ConfigMap to extend the job active deadline to 3600 s,
+#      then roll the SUC deployment when that patch actually changed
+#      anything — envFrom ConfigMaps are not live-reloaded by Kubernetes,
+#      so the pod must restart to pick up the new value.
 #   5. Grant system-upgrade-controller service account the privileged attribute
 #      in MKE cluster config when deploy_suc is true (UCPAuthorization allowlist).
 #   6. Apply the static cluster-upgrade-controller manifest (pre-creating its
@@ -106,6 +109,31 @@
   run_once: true
   register: _suc_configmap_patch
   changed_when: "'patched' in _suc_configmap_patch.stdout"
+
+# The controller consumes default-controller-env via envFrom, and
+# Kubernetes never restarts a running pod when a ConfigMap it references
+# via envFrom changes — the patch above would otherwise sit inert until
+# the pod happened to restart for an unrelated reason (node drain,
+# eviction, manual delete, ...). Roll the deployment only when the patch
+# above actually changed the data, so this stays idempotent (no restart
+# on unchanged reruns) while still guaranteeing the new deadline is
+# picked up immediately when it is changed.
+- name: Restart SUC deployment to pick up ConfigMap change
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - rollout
+      - restart
+      - deployment
+      - system-upgrade-controller
+      - -n
+      - system-upgrade
+      - --kubeconfig
+      - "{{ bundle_dest }}/kube.yml"
+  when: deploy_suc | bool and _suc_configmap_patch.changed
+  delegate_to: localhost
+  run_once: true
+  changed_when: true
 
 
 - ansible.builtin.include_tasks: tasks/suc-priv-grant-tasks.yml
