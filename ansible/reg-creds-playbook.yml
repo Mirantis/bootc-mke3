@@ -17,4 +17,5 @@
   hosts: all
   gather_facts: false
   tasks:
-    - ansible.builtin.include_tasks: tasks/private-reg-creds-tasks.yml
+    - name: Configure private registry credentials
+      ansible.builtin.include_tasks: tasks/private-reg-creds-tasks.yml

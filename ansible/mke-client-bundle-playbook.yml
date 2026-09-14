@@ -23,4 +23,5 @@
     # Override with -e bundle_dest=<path> as needed.
     bundle_dest: "{{ playbook_dir }}/mke-bundle"
   tasks:
-    - ansible.builtin.include_tasks: tasks/mke-client-bundle-tasks.yml
+    - name: Fetch MKE client bundle
+      ansible.builtin.include_tasks: tasks/mke-client-bundle-tasks.yml

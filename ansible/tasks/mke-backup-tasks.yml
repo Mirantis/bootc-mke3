@@ -1,5 +1,9 @@
 - name: Run backup container
-  ansible.builtin.shell: docker run --rm --security-opt label=disable --log-driver none -v /var/run/docker.sock:/var/run/docker.sock 'mirantis/ucp:{{ current_mke_version.stdout }}' backup --no-passphrase > '{{ backup_filename }}'
+  ansible.builtin.shell: >-
+    docker run --rm --security-opt label=disable --log-driver none
+    -v /var/run/docker.sock:/var/run/docker.sock
+    'mirantis/ucp:{{ current_mke_version.stdout }}' backup --no-passphrase
+    > '{{ backup_filename }}'
   when: mke_status.status == 200
   throttle: 1
 

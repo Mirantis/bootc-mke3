@@ -7,9 +7,11 @@
   vars_files:
     - vars/common-vars.yml
   tasks:
-    - ansible.builtin.include_tasks: tasks/firewalld-disable-tasks.yml
+    - name: Disable firewalld
+      ansible.builtin.include_tasks: tasks/firewalld-disable-tasks.yml
       when: disable_firewalld | bool
-    - ansible.builtin.include_tasks: tasks/mke-open-ports-tasks.yml
+    - name: Open required MKE ports
+      ansible.builtin.include_tasks: tasks/mke-open-ports-tasks.yml
       when: not disable_firewalld | bool
 
 - name: Init Swarm cluster control plane
@@ -18,7 +20,8 @@
   vars_files:
     - vars/common-vars.yml
   tasks:
-    - ansible.builtin.include_tasks: tasks/swarm-init-tasks.yml
+    - name: Initialize Swarm cluster
+      ansible.builtin.include_tasks: tasks/swarm-init-tasks.yml
 
 - name: Write MKE config file to remote hosts
   hosts: managers
@@ -26,7 +29,8 @@
   vars_files:
     - vars/common-vars.yml
   tasks:
-    - ansible.builtin.include_tasks: tasks/mke-toml-config.yml
+    - name: Write MKE TOML config file
+      ansible.builtin.include_tasks: tasks/mke-toml-config.yml
   become: true
 
 - name: Add workers to Swarm cluster
@@ -35,7 +39,8 @@
   vars_files:
     - vars/common-vars.yml
   tasks:
-    - ansible.builtin.include_tasks: tasks/swarm-join-workers-tasks.yml
+    - name: Join workers to Swarm cluster
+      ansible.builtin.include_tasks: tasks/swarm-join-workers-tasks.yml
 
 - name: Install MKE
   hosts: managers
@@ -43,8 +48,10 @@
     - vars/common-vars.yml
     - vars/mke-creds.yml
   tasks:
-    - ansible.builtin.include_tasks: tasks/mke-external-certs-tasks.yml
-    - ansible.builtin.include_tasks: tasks/mke-install-tasks.yml
+    - name: Apply external MKE server certificate
+      ansible.builtin.include_tasks: tasks/mke-external-certs-tasks.yml
+    - name: Install MKE
+      ansible.builtin.include_tasks: tasks/mke-install-tasks.yml
 
 
 - name: Harden hosts after MKE installation
@@ -73,10 +80,13 @@
       changed_when: false
       when: revoke_sudo_after_install | bool and disable_sshd_after_install | bool
 
-    - ansible.builtin.include_tasks: tasks/sudo-revoke-tasks.yml
+    - name: Revoke ansible user sudo privileges
+      ansible.builtin.include_tasks: tasks/sudo-revoke-tasks.yml
       when: revoke_sudo_after_install | bool and not disable_sshd_after_install | bool
 
-    - ansible.builtin.include_tasks: tasks/sshd-disable-tasks.yml
+    - name: Disable sshd
+      ansible.builtin.include_tasks: tasks/sshd-disable-tasks.yml
       when: disable_sshd_after_install | bool and not revoke_sudo_after_install | bool
 
-- ansible.builtin.import_playbook: mke-post-install-playbook.yml
+- name: Run MKE post-install playbook
+  ansible.builtin.import_playbook: mke-post-install-playbook.yml

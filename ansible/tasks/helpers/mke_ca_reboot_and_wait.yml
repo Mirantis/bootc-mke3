@@ -5,5 +5,7 @@
   ansible.builtin.reboot:
     reboot_command: systemctl reboot
 
-- ansible.builtin.include_tasks: tasks/helpers/wait_for_mke_containers.yml
-- ansible.builtin.include_tasks: tasks/helpers/mke_status.yml
+- name: Wait for MKE containers
+  ansible.builtin.include_tasks: tasks/helpers/wait_for_mke_containers.yml
+- name: Get MKE status
+  ansible.builtin.include_tasks: tasks/helpers/mke_status.yml

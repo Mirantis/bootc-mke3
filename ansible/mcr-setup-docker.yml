@@ -6,9 +6,11 @@
   vars:
     docker_daemon: "{{ lookup('file', docker_daemon_config_src) if docker_daemon_config_src is file else docker_daemon_config_src }}"
   tasks:
-    - ansible.builtin.include_tasks: tasks/mcr-copy-docker-daemon.yml
+    - name: Copy Docker daemon config to hosts
+      ansible.builtin.include_tasks: tasks/mcr-copy-docker-daemon.yml
   handlers:
-    - import_tasks: handlers/docker.yml
+    - name: Import Docker service handlers
+      import_tasks: handlers/docker.yml
 
 - name: Add the MCR license to the machines
   hosts: all
@@ -16,6 +18,8 @@
   vars_files:
     - vars/common-vars.yml
   tasks:
-    - ansible.builtin.include_tasks: tasks/mcr-license-tasks.yml
+    - name: Apply MCR license to hosts
+      ansible.builtin.include_tasks: tasks/mcr-license-tasks.yml
   handlers:
-    - import_tasks: handlers/docker.yml
+    - name: Import Docker service handlers
+      import_tasks: handlers/docker.yml

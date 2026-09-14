@@ -5,8 +5,13 @@
   when: swarm_status.stdout == "active"
   become: true
 
-- name: Backup Swarm directory
-  ansible.builtin.shell: tar -cvzf '/tmp/swarm-{{ current_engine_version.stdout }}-backup-{{ hostvars["localhost"]["start_timestamp"] }}.tar.tgz' /var/lib/docker/swarm/
+- name: Backup Swarm directory  # noqa: command-instead-of-module - no core module creates tar archives; unarchive only extracts
+  ansible.builtin.command:
+    argv:
+      - tar
+      - -cvzf
+      - "/tmp/swarm-{{ current_engine_version.stdout }}-backup-{{ hostvars['localhost']['start_timestamp'] }}.tar.tgz"
+      - /var/lib/docker/swarm/
   become: true
 
 - name: Start docker service

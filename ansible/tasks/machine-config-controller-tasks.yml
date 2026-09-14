@@ -25,7 +25,8 @@
 #
 # Ref: https://github.com/Mirantis/machine-config-controller
 
-- ansible.builtin.include_tasks: tasks/mke-client-bundle-tasks.yml
+- name: Fetch MKE client bundle
+  ansible.builtin.include_tasks: tasks/mke-client-bundle-tasks.yml
   when: deploy_machine_config_controller | bool
 
 - name: Ensure machine-config-controller namespace exists

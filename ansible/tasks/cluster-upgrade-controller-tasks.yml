@@ -32,7 +32,8 @@
 # Ref: https://github.com/Mirantis/cluster-upgrade-controller#install-the-controller
 # Ref: https://github.com/rancher/system-upgrade-controller
 
-- ansible.builtin.include_tasks: tasks/mke-client-bundle-tasks.yml
+- name: Fetch MKE client bundle
+  ansible.builtin.include_tasks: tasks/mke-client-bundle-tasks.yml
   when: deploy_suc | bool or deploy_cluster_upgrade_controller | bool
 
 - name: Deploy System Upgrade Controller (SUC)
@@ -136,7 +137,8 @@
   changed_when: true
 
 
-- ansible.builtin.include_tasks: tasks/suc-priv-grant-tasks.yml
+- name: Grant SUC required MKE privileges
+  ansible.builtin.include_tasks: tasks/suc-priv-grant-tasks.yml
   when: deploy_suc | bool
 - name: Ensure cluster-upgrade-controller namespace exists
   ansible.builtin.shell: >-
