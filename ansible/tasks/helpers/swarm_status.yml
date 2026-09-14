@@ -1,3 +1,3 @@
 - name: Get Swarm status
-  ansible.builtin.shell: docker info --format {% raw %}'{{ .Swarm.LocalNodeState }}'{% endraw %}
+  ansible.builtin.command: docker info --format {% raw %}'{{ .Swarm.LocalNodeState }}'{% endraw %}
   register: swarm_status

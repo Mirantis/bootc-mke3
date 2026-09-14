@@ -1,7 +1,8 @@
-- ansible.builtin.include_tasks: tasks/helpers/swarm_status.yml
+- name: Get Swarm status
+  ansible.builtin.include_tasks: tasks/helpers/swarm_status.yml
 
 - name: Check if MKE is installed
-  ansible.builtin.shell: docker ps -f name=ucp- -q
+  ansible.builtin.command: docker ps -f name=ucp- -q
   register: mke_installed
   run_once: true
 
@@ -17,7 +18,8 @@
   when: mke_external_certs_enabled | bool
   run_once: true
 
-- ansible.builtin.include_tasks: tasks/helpers/get_target_mke_version.yml
+- name: Get target MKE version
+  ansible.builtin.include_tasks: tasks/helpers/get_target_mke_version.yml
 
 - name: Install MKE
   ansible.builtin.command: >
@@ -28,12 +30,17 @@
   when: swarm_status.stdout == 'active' and mke_installed.stdout | length == 0
   run_once: true
 
-- ansible.builtin.include_tasks: tasks/helpers/mke_status.yml
-- ansible.builtin.include_tasks: tasks/helpers/remove_mke_docker_config.yml
+- name: Get MKE status
+  ansible.builtin.include_tasks: tasks/helpers/mke_status.yml
+- name: Remove MKE Docker config object
+  ansible.builtin.include_tasks: tasks/helpers/remove_mke_docker_config.yml
 
 # Fetched here (not in mke-post-install-playbook.yml) because this play
 # still has SSH access to the nodes; post-install may run after sshd/sudo
 # have been revoked.
-- ansible.builtin.include_tasks: tasks/fetch-controller-manifests-tasks.yml
-- ansible.builtin.include_tasks: tasks/fetch-cluster-upgrade-controller-manifest-tasks.yml
-- ansible.builtin.include_tasks: tasks/fetch-machine-config-controller-manifest-tasks.yml
+- name: Fetch controller manifests
+  ansible.builtin.include_tasks: tasks/fetch-controller-manifests-tasks.yml
+- name: Fetch cluster-upgrade-controller manifest
+  ansible.builtin.include_tasks: tasks/fetch-cluster-upgrade-controller-manifest-tasks.yml
+- name: Fetch machine-config-controller manifest
+  ansible.builtin.include_tasks: tasks/fetch-machine-config-controller-manifest-tasks.yml

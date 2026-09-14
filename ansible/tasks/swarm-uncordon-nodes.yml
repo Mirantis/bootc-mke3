@@ -1,8 +1,9 @@
 - name: Docker Swarm set nodes to Active state
   delegate_to: "{{ main_manager }}"
-  ansible.builtin.shell: docker node update --availability active {{ inventory_hostname }}
+  ansible.builtin.command: "docker node update --availability active {{ inventory_hostname }}"
 
-- ansible.builtin.include_tasks: tasks/helpers/swarm_status.yml
+- name: Get Swarm status
+  ansible.builtin.include_tasks: tasks/helpers/swarm_status.yml
 
 - name: Verify swarm status on with retry
   ansible.builtin.assert:

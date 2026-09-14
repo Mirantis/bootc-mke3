@@ -1,6 +1,6 @@
 - name: Remove the Docker Config object for MKE
-  ansible.builtin.shell: docker config rm com.docker.ucp.config
+  ansible.builtin.command: docker config rm com.docker.ucp.config
   delegate_to: "{{ main_manager }}"
-  ignore_errors: yes
+  ignore_errors: true
   when: mke_config_src != ""
   run_once: true

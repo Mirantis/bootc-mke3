@@ -1,10 +1,11 @@
-- ansible.builtin.include_tasks: tasks/helpers/docker_folder_exists.yml
+- name: Ensure Docker config folder exists
+  ansible.builtin.include_tasks: tasks/helpers/docker_folder_exists.yml
 
 - name: Copy over local Docker daemon config file to hosts
   become: true
   ansible.builtin.copy:
-    content: "{{ docker_daemon | to_json}}"
+    content: "{{ docker_daemon | to_json }}"
     dest: "{{ docker_daemon_config_dst }}"
-    backup: yes
+    backup: true
   when: docker_daemon is defined and docker_daemon != ""
   notify: Restart docker

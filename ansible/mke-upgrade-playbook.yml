@@ -7,9 +7,11 @@
   vars_files:
     - vars/common-vars.yml
   tasks:
-    - ansible.builtin.include_tasks: tasks/firewalld-disable-tasks.yml
+    - name: Disable firewalld
+      ansible.builtin.include_tasks: tasks/firewalld-disable-tasks.yml
       when: disable_firewalld | bool
-    - ansible.builtin.include_tasks: tasks/mke-open-ports-tasks.yml
+    - name: Open required MKE ports
+      ansible.builtin.include_tasks: tasks/mke-open-ports-tasks.yml
       when: not disable_firewalld | bool
 
 - name: Backup MKE before upgrade
@@ -21,7 +23,8 @@
   serial: 1
   gather_facts: false
   tasks:
-    - ansible.builtin.include_tasks: tasks/bootc-upgrade-tasks.yml
+    - name: Upgrade OS with bootc
+      ansible.builtin.include_tasks: tasks/bootc-upgrade-tasks.yml
 
 - name: Upgrade OS with bootc for workers
   hosts: workers
@@ -47,9 +50,12 @@
   vars_files:
     - vars/upgrade-vars.yml
   tasks:
-    - ansible.builtin.include_tasks: tasks/helpers/get_current_mke_version.yml
-    - ansible.builtin.include_tasks: tasks/helpers/get_target_mke_version.yml
-    - ansible.builtin.include_tasks: tasks/mke-preupgrade-tasks.yml
+    - name: Get current MKE version
+      ansible.builtin.include_tasks: tasks/helpers/get_current_mke_version.yml
+    - name: Get target MKE version
+      ansible.builtin.include_tasks: tasks/helpers/get_target_mke_version.yml
+    - name: Run MKE pre-upgrade checks
+      ansible.builtin.include_tasks: tasks/mke-preupgrade-tasks.yml
       when: "bootc_image_ref != ''"
 
 - name: Upgrade MKE
@@ -58,8 +64,10 @@
   vars_files:
     - vars/upgrade-vars.yml
   tasks:
-    - ansible.builtin.include_tasks: tasks/helpers/get_current_mke_version.yml
-    - ansible.builtin.include_tasks: tasks/helpers/get_target_mke_version.yml
+    - name: Get current MKE version
+      ansible.builtin.include_tasks: tasks/helpers/get_current_mke_version.yml
+    - name: Get target MKE version
+      ansible.builtin.include_tasks: tasks/helpers/get_target_mke_version.yml
     - name: Run upgrade MKE tasks
       ansible.builtin.include_tasks: tasks/mke-upgrade-tasks.yml
       when: target_mke_version.stdout > current_mke_version.stdout or bootc_image_ref != ''
@@ -72,5 +80,6 @@
   vars_files:
     - vars/common-vars.yml
   tasks:
-    - ansible.builtin.include_tasks: tasks/sshd-disable-tasks.yml
+    - name: Disable sshd
+      ansible.builtin.include_tasks: tasks/sshd-disable-tasks.yml
       when: disable_sshd_after_install | bool

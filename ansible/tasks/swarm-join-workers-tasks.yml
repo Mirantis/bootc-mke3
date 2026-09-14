@@ -1,5 +1,6 @@
-- ansible.builtin.include_tasks: tasks/helpers/swarm_status.yml
+- name: Get Swarm status
+  ansible.builtin.include_tasks: tasks/helpers/swarm_status.yml
 
 - name: Join swarm from all workers
-  ansible.builtin.shell: "{{ hostvars[main_manager]['worker_join_command'].stdout }}"
+  ansible.builtin.command: "{{ hostvars[main_manager]['worker_join_command'].stdout }}"
   when: inventory_hostname in groups['workers'] and swarm_status.stdout == 'inactive'

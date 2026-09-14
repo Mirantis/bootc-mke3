@@ -31,10 +31,24 @@
   failed_when: false
   changed_when: _sudo_revoke.rc == 0
 
-- name: Remove ansible user entries from all sudoers files
-  ansible.builtin.shell: |
-    sed -i '/^{{ ansible_user }}[[:space:]]/d' /etc/sudoers
-    find /etc/sudoers.d/ -maxdepth 1 -type f \
-      -exec sed -i '/^{{ ansible_user }}[[:space:]]/d' {} \;
+- name: Remove ansible user entries from sudoers file
+  ansible.builtin.replace:
+    path: /etc/sudoers
+    regexp: '^{{ ansible_user }}\s.*\n?'
   become: true
-  changed_when: false
+
+- name: Find sudoers.d drop-in files
+  ansible.builtin.find:
+    paths: /etc/sudoers.d/
+    file_type: file
+  register: _sudoers_d_files
+  become: true
+
+- name: Remove ansible user entries from sudoers.d drop-in files
+  ansible.builtin.replace:
+    path: "{{ item.path }}"
+    regexp: '^{{ ansible_user }}\s.*\n?'
+  loop: "{{ _sudoers_d_files.files }}"
+  loop_control:
+    label: "{{ item.path }}"
+  become: true

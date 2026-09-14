@@ -1,7 +1,8 @@
-- ansible.builtin.include_tasks: tasks/helpers/mke_status.yml
+- name: Get MKE status
+  ansible.builtin.include_tasks: tasks/helpers/mke_status.yml
 
 - name: Get MKE cluster ID
-  ansible.builtin.shell: docker info --format {% raw %}'{{ .Swarm.Cluster.ID }}'{% endraw %}
+  ansible.builtin.command: docker info --format {% raw %}'{{ .Swarm.Cluster.ID }}'{% endraw %}
   register: mke_id
   run_once: true
 
@@ -22,4 +23,5 @@
       - "{{ mke_upgrade_flags | join(' ') }}"
   run_once: true
 
-- ansible.builtin.include_tasks: tasks/helpers/mke_status.yml
+- name: Get MKE status
+  ansible.builtin.include_tasks: tasks/helpers/mke_status.yml

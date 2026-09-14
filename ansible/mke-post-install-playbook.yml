@@ -29,7 +29,8 @@
     mke_url: "{{ hostvars[groups['managers'][0]]['mke_url'] }}"
     bundle_dest: "{{ playbook_dir }}/mke-bundle"
   tasks:
-    - ansible.builtin.include_tasks: tasks/cluster-upgrade-controller-tasks.yml
+    - name: Install cluster-upgrade-controller
+      ansible.builtin.include_tasks: tasks/cluster-upgrade-controller-tasks.yml
 
 - name: Install machine-config-controller
   hosts: localhost
@@ -43,4 +44,5 @@
     mke_url: "{{ hostvars[groups['managers'][0]]['mke_url'] }}"
     bundle_dest: "{{ playbook_dir }}/mke-bundle"
   tasks:
-    - ansible.builtin.include_tasks: tasks/machine-config-controller-tasks.yml
+    - name: Install machine-config-controller
+      ansible.builtin.include_tasks: tasks/machine-config-controller-tasks.yml

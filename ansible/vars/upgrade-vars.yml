@@ -5,7 +5,6 @@
 mke_upgrade_flags: [--force-minimums]
 
 # MKE upgrade check flags. Use this variable for injecting the required flags for the upgrade check subcommand used for mke pre-upgrade ansible task.
-# Available flags can be found at https://docs.mirantis.com/mke/3.8/cli-ref/mke-cli-upgrade.html#checks-subcommand 
 mke_upgrade_check_flags: ["--force-minimums"]
 
 # Number of nodes that get upgraded in parallel

@@ -1,3 +1,3 @@
 - name: Get current Docker Engine version
-  ansible.builtin.shell: docker info --format {% raw %}'{{ .ServerVersion }}'{% endraw %}
+  ansible.builtin.command: docker info --format {% raw %}'{{ .ServerVersion }}'{% endraw %}
   register: current_engine_version

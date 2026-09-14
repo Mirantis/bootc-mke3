@@ -24,14 +24,16 @@
 #     -e mke_custom_ca_cluster_key_src=/path/to/cluster-ca-key.pem
 
 - name: Apply custom MKE root CA material
-  hosts: "{{ groups['managers'][0] }}"
+  hosts: managers[0]
   gather_facts: false
   vars_files:
     - vars/common-vars.yml
     - vars/mke-custom-ca-vars.yml
   tasks:
-    - ansible.builtin.include_tasks: tasks/helpers/get_target_mke_version.yml
-    - ansible.builtin.include_tasks: tasks/mke-custom-ca-tasks.yml
+    - name: Get target MKE version
+      ansible.builtin.include_tasks: tasks/helpers/get_target_mke_version.yml
+    - name: Apply custom MKE root CA material
+      ansible.builtin.include_tasks: tasks/mke-custom-ca-tasks.yml
 
 - name: Detect current Swarm Raft leader among managers
   hosts: managers
@@ -40,7 +42,8 @@
     - vars/common-vars.yml
     - vars/mke-custom-ca-vars.yml
   tasks:
-    - ansible.builtin.include_tasks: tasks/helpers/mke_swarm_leader_group.yml
+    - name: Detect current Swarm Raft leader
+      ansible.builtin.include_tasks: tasks/helpers/mke_swarm_leader_group.yml
       when: >
         mke_custom_ca_reboot_after | bool and
         (mke_custom_ca_cluster_enabled | bool or
@@ -54,7 +57,8 @@
   vars_files:
     - vars/common-vars.yml
   tasks:
-    - ansible.builtin.include_tasks: tasks/helpers/mke_ca_reboot_and_wait.yml
+    - name: Reboot manager and wait for MKE
+      ansible.builtin.include_tasks: tasks/helpers/mke_ca_reboot_and_wait.yml
 
 - name: Reboot leader manager last to apply new root CA material
   hosts: mke_swarm_leader
@@ -62,4 +66,5 @@
   vars_files:
     - vars/common-vars.yml
   tasks:
-    - ansible.builtin.include_tasks: tasks/helpers/mke_ca_reboot_and_wait.yml
+    - name: Reboot manager and wait for MKE
+      ansible.builtin.include_tasks: tasks/helpers/mke_ca_reboot_and_wait.yml

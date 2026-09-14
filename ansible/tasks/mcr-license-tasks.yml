@@ -1,4 +1,5 @@
-- ansible.builtin.include_tasks: tasks/helpers/docker_folder_exists.yml
+- name: Ensure Docker config folder exists
+  ansible.builtin.include_tasks: tasks/helpers/docker_folder_exists.yml
 
 - name: Check if the Docker daemon config file exists
   stat:

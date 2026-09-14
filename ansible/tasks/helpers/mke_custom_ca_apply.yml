@@ -4,7 +4,7 @@
 # Also expects target_mke_version (tasks/helpers/get_target_mke_version.yml)
 # and mke_custom_ca_force_recent_backup to already be in scope.
 
-- name: "Resolve {{ mke_ca.ca_type }} CA cert/key content"
+- name: "Resolve CA cert/key content: {{ mke_ca.ca_type }}"
   ansible.builtin.set_fact:
     mke_ca_cert_content: "{{ lookup('file', mke_ca.cert_src) if mke_ca.cert_src is file else mke_ca.cert_src }}"
     mke_ca_key_content: "{{ lookup('file', mke_ca.key_src) if mke_ca.key_src is file else mke_ca.key_src }}"
@@ -13,16 +13,16 @@
 # Staging and applying are grouped in a block so the staged private key is
 # always removed from disk -- even if staging or the `ca` command itself
 # fails (e.g. a CN mismatch) -- rather than being orphaned in /tmp.
-- name: "Stage, apply, and clean up {{ mke_ca.ca_type }} CA material"
+- name: "Stage, apply, and clean up CA material: {{ mke_ca.ca_type }}"
   become: true
   block:
-    - name: "Create {{ mke_ca.ca_type }} CA staging directory"
+    - name: "Create CA staging directory: {{ mke_ca.ca_type }}"
       ansible.builtin.file:
         path: "/tmp/mke-custom-ca-{{ mke_ca.ca_type }}"
         state: directory
         mode: "0700"
 
-    - name: "Stage {{ mke_ca.ca_type }} CA cert/key"
+    - name: "Stage CA cert/key: {{ mke_ca.ca_type }}"
       ansible.builtin.copy:
         content: "{{ item.content }}"
         dest: "/tmp/mke-custom-ca-{{ mke_ca.ca_type }}/{{ item.name }}"
@@ -34,7 +34,7 @@
         label: "{{ item.name }}"
       no_log: true
 
-    - name: "Apply custom {{ mke_ca.ca_type }} root CA"
+    - name: "Apply custom root CA: {{ mke_ca.ca_type }}"
       ansible.builtin.command: >
         docker container run --rm --security-opt label=disable
         -v /var/run/docker.sock:/var/run/docker.sock
@@ -43,7 +43,7 @@
         mirantis/ucp:{{ target_mke_version.stdout }}
         ca {{ mke_ca.flag }}{{ ' --force-recent-backup' if mke_custom_ca_force_recent_backup | bool else '' }}
   always:
-    - name: "Remove staged {{ mke_ca.ca_type }} CA cert/key"
+    - name: "Remove staged CA cert/key: {{ mke_ca.ca_type }}"
       ansible.builtin.file:
         path: "/tmp/mke-custom-ca-{{ mke_ca.ca_type }}"
         state: absent

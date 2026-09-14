@@ -2,8 +2,9 @@
   hosts: localhost
   gather_facts: false
   tasks:
-    - ansible.builtin.set_fact:
-        start_timestamp: '{{ now(utc=true,fmt="%Y%m%d%H%M") }}'
+    - name: Set backup start timestamp
+      ansible.builtin.set_fact:
+        start_timestamp: '{{ now(utc=true, fmt="%Y%m%d%H%M") }}'
 
 - name: Backup MKE
   hosts: managers
@@ -13,10 +14,13 @@
   vars:
     backup_filename: '/tmp/mke-{{ current_mke_version.stdout }}-backup-{{ hostvars["localhost"]["start_timestamp"] }}.tar'
   tasks:
-    - ansible.builtin.include_tasks: tasks/helpers/get_current_mke_version.yml
-    - ansible.builtin.include_tasks: tasks/helpers/mke_status.yml
+    - name: Get current MKE version
+      ansible.builtin.include_tasks: tasks/helpers/get_current_mke_version.yml
+    - name: Get MKE status
+      ansible.builtin.include_tasks: tasks/helpers/mke_status.yml
 
-    - ansible.builtin.include_tasks: tasks/mke-backup-tasks.yml
+    - name: Run MKE backup
+      ansible.builtin.include_tasks: tasks/mke-backup-tasks.yml
 
 - name: Backup Swarm
   hosts: managers
@@ -25,9 +29,13 @@
   vars_files:
     - vars/common-vars.yml
   tasks:
-    - ansible.builtin.include_tasks: tasks/helpers/get_current_engine_version.yml
-    - ansible.builtin.include_tasks: tasks/helpers/swarm_status.yml
+    - name: Get current Docker Engine version
+      ansible.builtin.include_tasks: tasks/helpers/get_current_engine_version.yml
+    - name: Get Swarm status
+      ansible.builtin.include_tasks: tasks/helpers/swarm_status.yml
 
-    - ansible.builtin.include_tasks: tasks/swarm-backup-tasks.yml
+    - name: Run Swarm backup
+      ansible.builtin.include_tasks: tasks/swarm-backup-tasks.yml
 
-    - ansible.builtin.include_tasks: tasks/helpers/wait_for_mke_containers.yml
+    - name: Wait for MKE containers
+      ansible.builtin.include_tasks: tasks/helpers/wait_for_mke_containers.yml
