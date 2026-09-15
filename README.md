@@ -21,9 +21,9 @@ Mirantis provides assets for provisioning `bootc-mke3` on different providers. A
 
 | Type  | Download link | Description | Mirantis product's version |
 | :---- | ------------- | ----------- | -------------------------- |
-| ISO   | [Link](https://get.mirantis.com/bootc-mke3/images/bootc-mke3-r9.8-mcr29.6.1-mke3.9.5-bare-simple.iso)      | **Simple** ISO with basic kickstart embedded. Unattended Anaconda installation will be performed. See [this document](docs/installation-guide/iso-editions.md#simple) to get more details about Simple image edition. | MCR 29.6.1.1 / MKE 3.9.6 |
-| ISO   | [Link](https://get.mirantis.com/bootc-mke3/images/bootc-mke3-r9.8-mcr29.6.1-mke3.9.5-bare-generic.iso)      | **Generic** ISO without any customisation. See [this document](docs/installation-guide/iso-editions.md#generic-image-customisation) to get the details on how to properly customise it | MCR 29.6.1.1 / MKE 3.9.6 |
-| QCOW2 | [Link](https://get.mirantis.com/bootc-mke3/images/bootc-mke3-r9.8-mcr29.6.1-mke3.9.5-cloud.qcow2)      | Standard QEMU/KVM bootable image | MCR 29.6.1.1 / MKE 3.9.6 |
+| ISO   | [Link](https://get.mirantis.com/bootc-mke3/images/bootc-mke3-r9.8-mcr29.6.1.1-mke3.9.6-bare-simple.iso)      | **Simple** ISO with basic kickstart embedded. Unattended Anaconda installation will be performed. See [this document](docs/installation-guide/iso-editions.md#simple) to get more details about Simple image edition. | MCR 29.6.1.1 / MKE 3.9.6 |
+| ISO   | [Link](https://get.mirantis.com/bootc-mke3/images/bootc-mke3-r9.8-mcr29.6.1.1-mke3.9.6-bare-generic.iso)      | **Generic** ISO without any customisation. See [this document](docs/installation-guide/iso-editions.md#generic-image-customisation) to get the details on how to properly customise it | MCR 29.6.1.1 / MKE 3.9.6 |
+| QCOW2 | [Link](https://get.mirantis.com/bootc-mke3/images/bootc-mke3-r9.8-mcr29.6.1.1-mke3.9.6-cloud.qcow2)      | Standard QEMU/KVM bootable image | MCR 29.6.1.1 / MKE 3.9.6 |
 
 > [!NOTE]
 > **Simple** ISO edition is used mostly for demo/test purposes. For production-grade clusters consider using **Generic** ISO.
