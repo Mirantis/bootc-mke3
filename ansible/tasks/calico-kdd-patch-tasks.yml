@@ -1,0 +1,50 @@
+# Patches the calico-kube-controllers Deployment in kube-system to run
+# under the calico-kube-controllers ServiceAccount instead of calico-node.
+#
+# Known MKE3 issue: when Calico is installed with the Kubernetes Datastore
+# (KDD) backend (--calico-datastore-type-kdd at `mke install` time — see
+# calico_datastore_type_kdd in vars/common-vars.yml), MKE brings up the
+# calico-kube-controllers Deployment still wired to the calico-node
+# ServiceAccount. calico-node's RBAC is scoped for the per-node agent, not
+# the cluster-wide controller, so calico-kube-controllers cannot sync from
+# the Kubernetes API (CrashLoopBackOff / RBAC "forbidden" errors in its
+# logs) until it runs as the calico-kube-controllers ServiceAccount that MKE
+# also creates but never wires up.
+#
+# Installing cluster-upgrade-controller/machine-config-controller/SUC each
+# apply their own CRDs/namespaces/Deployments, which was observed to trigger
+# MKE to re-sync its baseline kube-system manifests — reverting this patch
+# if it ran before them. mke-post-install-playbook.yml therefore runs this
+# task last, after every other mutating step, so nothing later in the same
+# run can undo it.
+#
+# Required vars (inherited from the enclosing play):
+#   admin_user  – MKE administrator username       (from vars/mke-creds.yml)
+#   admin_pass  – MKE administrator password       (from vars/mke-creds.yml)
+#   mke_url     – MKE load-balancer IP/hostname    (from inventory all.vars)
+#   bundle_dest – local directory for the bundle   (default: playbook_dir/mke-bundle)
+#
+# Ref: https://docs.mirantis.com/mke/3.7/cli-ref/mke-cli-install.html
+
+- name: Fetch MKE client bundle
+  ansible.builtin.include_tasks: tasks/mke-client-bundle-tasks.yml
+
+- name: Patch calico-kube-controllers service account
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - patch
+      - deployment
+      - calico-kube-controllers
+      - -n
+      - kube-system
+      - --kubeconfig
+      - "{{ bundle_dest }}/kube.yml"
+      - --type
+      - merge
+      - --patch
+      - '{"spec":{"template":{"spec":{"serviceAccountName":"calico-kube-controllers"}}}}'
+  delegate_to: localhost
+  run_once: true
+  register: _calico_kdd_patch
+  changed_when: "'patched' in _calico_kdd_patch.stdout"
