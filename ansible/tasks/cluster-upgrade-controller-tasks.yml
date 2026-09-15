@@ -1,7 +1,11 @@
 # Installs the cluster-upgrade-controller using the MKE3 client bundle kubeconfig.
 #
 # Steps:
-#   1. Fetch and extract the client bundle (kube.yml is the kubeconfig).
+#   1. Fetch and extract the client bundle (kube.yml is the kubeconfig). This
+#      play runs first in mke-post-install-playbook.yml, so it normally does
+#      the actual fetch; it then sets mke_client_bundle_fetched: true so the
+#      later machine-config-controller-tasks.yml play (same hosts: localhost
+#      host, same ansible-playbook run) skips its own redundant fetch.
 #   2. Deploy System Upgrade Controller (SUC) when deploy_suc is true.
 #   3. Patch SUC deployment with node affinity so it schedules only on
 #      control-plane / master nodes running Linux.
@@ -34,7 +38,7 @@
 
 - name: Fetch MKE client bundle
   ansible.builtin.include_tasks: tasks/mke-client-bundle-tasks.yml
-  when: deploy_suc | bool or deploy_cluster_upgrade_controller | bool
+  when: (deploy_suc | bool or deploy_cluster_upgrade_controller | bool) and not (mke_client_bundle_fetched | default(false))
 
 - name: Deploy System Upgrade Controller (SUC)
   ansible.builtin.command: >-

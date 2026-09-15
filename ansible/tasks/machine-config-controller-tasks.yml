@@ -3,6 +3,9 @@
 #
 # Steps:
 #   1. Fetch and extract the client bundle (kube.yml is the kubeconfig).
+#      Skipped when mke_client_bundle_fetched is already true — normally set
+#      by cluster-upgrade-controller-tasks.yml, which runs first in
+#      mke-post-install-playbook.yml against the same hosts: localhost host.
 #   2. Ensure the target namespace exists — `kubectl apply` never creates
 #      one on its own, unlike `helm upgrade --install --create-namespace`.
 #   3. Apply the static machine-config-controller manifest when
@@ -27,7 +30,7 @@
 
 - name: Fetch MKE client bundle
   ansible.builtin.include_tasks: tasks/mke-client-bundle-tasks.yml
-  when: deploy_machine_config_controller | bool
+  when: deploy_machine_config_controller | bool and not (mke_client_bundle_fetched | default(false))
 
 - name: Ensure machine-config-controller namespace exists
   ansible.builtin.shell: >-
