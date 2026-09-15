@@ -52,16 +52,32 @@ Cluster should consist of one or more compute machine nodes. In order to use `bo
 > [!NOTE]
 > **Simple** ISO edition is used mostly for demo/test purposes. For production-grade clusters consider using **Generic** ISO. The QCOW2 cloud image ships uncustomised — it is the user's responsibility to customise and secure it appropriately for production use.
 
-> [!IMPORTANT]
-> Machine customization at provision time is done via **kickstart** for
-> ISO-provisioned machines — the standard production mechanism (see
-> [ISO editions](iso-editions.md#generic-image-customisation)). cloud-init
-> is only available on the cloud-platform builds (AMI/QCOW2) — AMI builds
-> are primarily used for internal testing, while QCOW2 is publicly
-> announced/downloadable. Where this documentation offers both mechanisms,
-> prefer kickstart unless you are specifically working with a cloud build.
-
 2. All machines meet MKE hardware requirements. For the list of requirements, please see Mirantis Kubernetes Engine official documentation pages, [hardware requirements section](https://docs.mirantis.com/mke/3.9/common/mke-hw-reqs.html)
+
+### Machine customisation at provision time
+
+Machine customization at provision time is done via **kickstart** for
+ISO-provisioned machines — the standard production mechanism (see
+[ISO editions](iso-editions.md#generic-image-customisation) for the
+mandatory lines and
+[Common kickstart customisations](iso-editions.md#common-kickstart-customisations)
+for recipes). cloud-init is only available on the cloud-platform builds
+(AMI/QCOW2) — AMI builds are primarily used for internal testing, while
+QCOW2 is publicly announced/downloadable. Where this documentation offers
+both mechanisms, prefer kickstart unless you are specifically working with
+a cloud build.
+
+Some configuration has to exist **before the machine first boots**. Extra
+kernel modules are the load-bearing case: the image latches
+`kernel.modules_disabled=1` early in boot, after which no module can be
+loaded until the next reboot. Disabling a baked service is the other common
+case. Both require a machine source you can customise — the **Generic** ISO
+with your own kickstart file, or a cloud build with cloud-init user-data.
+The **Simple** ISO embeds its own kickstart and exposes no such hook, so on
+it these changes can only be made after installation, on the running node,
+with a reboot wherever the module latch is involved. See
+[Image architecture](image-architecture.md) for what the image ships and
+which customisation points are supported.
 
 ### Machine connection
 

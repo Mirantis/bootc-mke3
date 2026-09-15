@@ -47,9 +47,79 @@ file — see
 > [!WARNING]
 > It's user's responsibility to add those specific kickstart file lines. If it wasn't done, `bootc-mke3` won't be installed properly.
 
-#### Summary
+### Common kickstart customisations
+
+The recipes below go in the same kickstart file as the mandatory lines
+above, inside its `%post` section (or a second `%post --erroronfail`
+block). They cover the two customisations that most often have to happen at
+provision time rather than afterwards. For what the image ships and why
+these are the supported extension points, see
+[Image architecture](image-architecture.md).
+
+#### Preload additional kernel modules
+
+The image loads a fixed module allowlist at boot and then sets
+`kernel.modules_disabled=1`, which locks the module subsystem for the rest
+of the boot session. That latch is one-way: a module not loaded before it
+applies cannot be loaded later by any means, so any module your workloads
+need beyond the image's list must be declared before the node first boots —
+or the node must be rebooted after adding it. See
+[Kernel modules](image-architecture.md#kernel-modules).
+
+```
+%post --erroronfail
+cat > /etc/modules-load.d/site-extra.conf <<'EOF'
+nfsd
+EOF
+%end
+```
+
+Because `%post` runs before the installed system has ever booted, the
+drop-in is effective on **first boot** — no additional reboot is needed.
+`systemd-modules-load.service` reads `/etc/modules-load.d/` and is ordered
+`Before=systemd-sysctl.service`, so the modules load while loading is still
+permitted. Verify on the booted node with:
+
+```sh
+lsmod | grep <module>
+```
+
+#### Disable a baked service
+
+Any unit the image ships can be disabled — or masked, if something else
+might pull it in — from `%post`:
+
+```
+%post --erroronfail
+systemctl disable firewalld.service
+%end
+```
+
+The same pattern (`systemctl disable <unit>` / `systemctl mask <unit>`)
+applies to any of the baked units listed in
+[Image architecture](image-architecture.md#baked-services).
+
+> [!NOTE]
+> For firewalld specifically this is usually unnecessary. Nodes installed
+> by the Ansible installer have their firewall managed for them — per-service
+> rules from `tasks/mke-open-ports-tasks.yml`, or firewalld disabled
+> outright via the `disable_firewalld` variable (see
+> [Harden MKE 3 Kubernetes](../operations-guide/harden-mke3-kubernetes.md)).
+> Workers that arrive by no-touch join are never touched by the installer,
+> so their firewall is configured by the same provisioning payload instead
+> (see [Join machines with no-touch join](../operations-guide/join-machines-no-touch.md)).
+
+#### Cloud builds
+
+The cloud-platform builds (AMI/QCOW2) achieve both of the above through
+cloud-init `write_files`/`runcmd` instead of kickstart. Worked examples of
+both, including the reboot gating needed when a module is added to an
+already-running node, are in
+[Join machines with no-touch join](../operations-guide/join-machines-no-touch.md).
+
+### Summary
 
 In order to perform a kickstart-based Generic `bootc-mke3` ISO customisation, following actions need to be performed:
 
-1. Create a kickstart file that must contain `bootc-mke3` specific configuration lines (listed in previous section) along with user-provided customisation options.
+1. Create a kickstart file that must contain `bootc-mke3` specific configuration lines (listed in [Generic image customisation](#generic-image-customisation)) along with any user-provided customisation options, such as those in [Common kickstart customisations](#common-kickstart-customisations).
 2. Add `inst.ks=<kickstart-file-location>` to kernel parameters during the boot of ISO with the location of kickstart file specified.

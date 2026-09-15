@@ -6,6 +6,7 @@ This guide covers everything needed to go from bare infrastructure to a running 
 
 - [Provisioning overview](installation-guide/provisioning.md) — registry setup, machine requirements, and the available provisioning approaches.
 - [ISO editions](installation-guide/iso-editions.md) — Simple vs. Generic images and how to customize the Generic image via kickstart.
+- [Image architecture](installation-guide/image-architecture.md) — what the image ships (kernel-module allowlist and lockdown, NetworkManager config, baked services) and the supported customisation points.
 - [Ansible inventory input](installation-guide/ansible-inventory-input.md) — inventory file structure consumed by the installer/upgrader.
 - [Provision with Terraform on vSphere](installation-guide/provision-terraform-vsphere.md)
 - [Provision with Terraform on AWS](installation-guide/provision-terraform-aws.md) — dev/testing only, not production-grade.
