@@ -23,6 +23,22 @@ mke_install_flags:
     "--force-minimums",
   ]
 
+# When true, `mke install` is run with --calico-datastore-type-kdd, switching
+# Calico's datastore backend from etcd to the Kubernetes API (KDD).
+#
+# Known MKE3 issue: with KDD enabled, MKE brings up the
+# calico-kube-controllers Deployment (kube-system) still wired to the
+# calico-node ServiceAccount instead of the calico-kube-controllers
+# ServiceAccount it also creates — calico-node's RBAC is scoped for the node
+# agent, not the controller, so the pod cannot sync from the Kubernetes API.
+# tasks/calico-kdd-patch-tasks.yml (run from mke-post-install-playbook.yml)
+# patches the Deployment's serviceAccountName once the cluster is up. Keep
+# this var and that task's `when` in sync if you flip this.
+#
+# NOTE: MKE team engineers don't recommend to use KDD by default, because
+# it is not yet fully hardened from a product perspective
+calico_datastore_type_kdd: false
+
 # Use your own TLS certificate for the MKE web server/API instead of the
 # self-signed certificate MKE generates. Applied only at install time, via
 # `--external-server-cert` (tasks/mke-external-certs-tasks.yml populates the
