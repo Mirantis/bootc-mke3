@@ -51,19 +51,14 @@ No SSH and no Ansible inventory are required — only `kubectl` access via the
 
 ## Procedure
 
-### 1. Determine the target image references
+### 1. Verify target image access
 
-On a booted cluster node, `/usr/share/mke-controllers/versions.txt` lists the
-exact, currently-baked controller and upgrade-job image references. Use the
-`mke3-upgrade` entry from that file **verbatim** for `spec.product.mke3.image`
-below — do not guess or hand-construct this reference.
-
-> [!IMPORTANT]
-> Getting `spec.product.mke3.image` wrong does not fail fast. The controller
-> will retry against the bad reference until the CR's timeout (default ~4h)
-> elapses, then report `Failed` — burning the entire timeout window before
-> you learn the reference was wrong. Always copy it verbatim from
-> `versions.txt`.
+Before applying the CR, confirm the target `mirantis/ucp:<version>` upgrade
+image and (if `spec.os.image` is set) the target bootc OS image are both
+pullable from wherever the cluster's nodes read images from — see
+[registry requirements](../installation-guide/provisioning.md#registry).
+`cluster-upgrade-controller` reuses its own image to run the `mke3-upgrade`
+step; there is no separate `spec.product.mke3.image` field to configure.
 
 If `spec.os.image` is set, verify its cosign signature before applying the
 CR — see
@@ -84,7 +79,6 @@ spec:
     type: mke3
     version: "<target MKE version>"
     mke3:
-      image: <mke3-upgrade ref, verbatim from versions.txt>
       upgradeFlags: ["--force-minimums"]
       backupDir: <backup-dir>                  # same dir used for the manual backup above
   controlPlaneConcurrency: 1
