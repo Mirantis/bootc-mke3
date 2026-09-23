@@ -27,6 +27,17 @@
 - name: Get target MKE version
   ansible.builtin.include_tasks: tasks/helpers/get_target_mke_version.yml
 
+# async+poll (not a plain synchronous command): this is a single foreground
+# `docker run` with no output for several minutes while it pulls images and
+# installs. A synchronous command holds one SSH connection open and silent
+# for that whole time, which infra that resets idle TCP flows (e.g.
+# GitHub-hosted runners, behind Azure's outbound SNAT with a ~4-minute idle
+# timeout) kills mid-install: ansible sees the connection as "Shared
+# connection to <host> closed" / UNREACHABLE, never the actual exit code —
+# indistinguishable from a real node failure and losing the play entirely.
+# async detaches the remote command immediately; each poll is its own
+# short-lived connection, so no connection needs to survive the full
+# install duration. See vars/common-vars.yml for mke_install_timeout.
 - name: Install MKE
   ansible.builtin.command: >
     docker run --rm --security-opt label=disable -v /var/run/docker.sock:/var/run/docker.sock
@@ -35,6 +46,8 @@
 
   when: swarm_status.stdout == 'active' and mke_installed.stdout | length == 0
   run_once: true
+  async: "{{ mke_install_timeout }}"
+  poll: 15
 
 - name: Get MKE status
   ansible.builtin.include_tasks: tasks/helpers/mke_status.yml

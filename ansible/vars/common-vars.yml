@@ -23,6 +23,21 @@ mke_install_flags:
     "--force-minimums",
   ]
 
+# Ceiling (seconds) for the async-wrapped "Install MKE" task
+# (tasks/mke-install-tasks.yml). `docker run mirantis/ucp ... install` is a
+# single foreground command with run_once: true and no output for several
+# minutes while it pulls images and installs — long enough that a plain
+# synchronous ansible.builtin.command silently loses the connection on
+# infra that drops idle TCP flows (observed on GitHub-hosted runners, which
+# sit behind Azure's outbound SNAT and reset idle connections after ~4
+# minutes): the task fails with "Shared connection to <host> closed"
+# instead of ansible ever seeing MKE's own exit code. async+poll sidesteps
+# this entirely — the remote command detaches immediately and each
+# async_status poll is its own short-lived connection, so no single
+# connection needs to stay silently open for the install's full duration.
+# 1800s (30 min) is a generous ceiling, not a measured typical duration.
+mke_install_timeout: 1800
+
 # When true, `mke install` is run with --calico-datastore-type-kdd, switching
 # Calico's datastore backend from etcd to the Kubernetes API (KDD).
 #
