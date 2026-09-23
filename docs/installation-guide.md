@@ -19,4 +19,8 @@ This guide covers everything needed to go from bare infrastructure to a running 
 - [Post-install controllers](installation-guide/install-controllers.md) — what the System Upgrade Controller, `cluster-upgrade-controller`, and `machine-config-controller` deploy by default, and how to verify them.
 - [Air-gapped bootc-mke3](installation-guide/airgap-bootc-mke3.md) — what must be mirrored to an internal registry and the Ansible variables to repoint.
 
+## Add-ons
+
+- [Calico Enterprise](installation-guide/calico-enterprise.md) — provisioning-time kernel modules, pre-install checks, and the Tigera operator install steps for running Calico Enterprise on top of `bootc-mke3`.
+
 See also the [Operations Guide](operations-guide.md) for day-2 tasks (upgrades, adding machines, cluster access, hardening) once a cluster is installed.
