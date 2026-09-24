@@ -68,7 +68,7 @@ full mechanism.
 As of current bootc builds, the image's boot-time allowlist
 already includes Calico Enterprise's `ipip`, IPv6 netfilter, IPVS/SCTP
 match, logging, L7 proxy/TPROXY, and bandwidth-QoS modules (added
-2026-09-08). Six further modules that Calico Enterprise needs are present in
+2026-09-08). Eight further modules are present in
 the image's kernel package but **not on that allowlist** — the
 "present in the image but unloaded" case that
 [Adding modules](image-architecture.md#adding-modules) covers; each was
@@ -80,6 +80,7 @@ found by hitting its failure on the validation cluster:
 | `xt_NFQUEUE`, `xt_NFLOG` | `iptables-nft-restore`: `Extension NFQUEUE/NFLOG ... missing kernel module?` |
 | `ip_set_hash_ipport` | `Failed to complete ipset restore` for the per-service `hash:ip,port` ipsets |
 | `nft_log` | `RULE_APPEND failed (No such file or directory)` on every `-j NFLOG` flow-log rule; Felix panics after ~10 retries and `calico-node` crash-loops, `calico-apiserver` with it. iptables-nft emits NFLOG as the native nftables `log` expression, so `xt_NFLOG` alone is not enough; flow logs are always-on in Calico Enterprise (`FELIX_FLOWLOGSFILEENABLED=true` is hard-coded by the operator) and cannot be turned off via `FelixConfiguration` |
+| `xt_limit`, `nft_limit` | **Does not make Calico fail** — Felix does not currently emit `-m limit`. Listed because a probe shows `-m limit` rules fail with the same `RULE_APPEND (No such file or directory)` on this image, and a module missed here costs a rebuild-and-reboot while an unused loaded one costs nothing (iptables-nft renders `-m limit` as the native nftables `limit` expression, so `xt_limit` alone is not sufficient) |
 
 Add them at provision time through the `/etc/modules-load.d/` extension
 point described in [Adding modules](image-architecture.md#adding-modules);
@@ -113,6 +114,8 @@ xt_NFQUEUE
 xt_NFLOG
 nft_log
 ip_set_hash_ipport
+xt_limit
+nft_limit
 xt_socket
 xt_TPROXY
 tun
@@ -125,7 +128,7 @@ sch_htb
 ```
 
 > [!NOTE]
-> Should a future image ship these six modules on its own allowlist, the two
+> Should a future image ship these eight modules on its own allowlist, the two
 > provision-time recipes below become a no-op — both are written to be safe
 > to leave in place permanently rather than removed once the image catches
 > up. Verify with `lsmod` either way (see [Verification](#verification)).
@@ -160,6 +163,8 @@ xt_NFQUEUE
 xt_NFLOG
 nft_log
 ip_set_hash_ipport
+xt_limit
+nft_limit
 xt_socket
 xt_TPROXY
 tun
@@ -214,6 +219,8 @@ write_files:
       xt_NFLOG
       nft_log
       ip_set_hash_ipport
+      xt_limit
+      nft_limit
       xt_socket
       xt_TPROXY
       tun
@@ -561,12 +568,11 @@ nodes):
   `v3.23.2` has not been checked against Tigera's published compatibility
   matrix; the validation install worked, but that is an observation, not
   confirmed Tigera support coverage.
-- The six additional modules (`nfnetlink_queue`, `nfnetlink_log`,
-  `xt_NFQUEUE`, `xt_NFLOG`, `nft_log`, `ip_set_hash_ipport`) are not on
+- The eight additional modules (`nfnetlink_queue`, `nfnetlink_log`,
+  `xt_NFQUEUE`, `xt_NFLOG`, `nft_log`, `ip_set_hash_ipport`, `xt_limit`,
+  `nft_limit`) are not on
   the allowlist of any released bootc build; the
   [Adding modules](image-architecture.md#adding-modules) drop-in is the
   only path today. Whether to add them to the image is an open decision.
-- `xt_limit` (`-m limit`) fails the same way on this image; Felix does not
-  currently emit it, so it is not preloaded.
 - The Ansible installer has no dedicated variable for `--unmanaged-cni`;
   it is passed by overriding the whole `mke_install_flags` list.
