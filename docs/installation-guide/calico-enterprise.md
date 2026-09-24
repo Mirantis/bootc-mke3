@@ -130,18 +130,19 @@ ifb
 sch_htb
 ```
 
-Two ways to get the list onto the allowlist, depending on whether the
-node has booted yet:
+Three ways to get the list onto the allowlist, depending on when the node
+is being configured:
 
 | Node state | Method | Reboot |
 |---|---|---|
 | Not yet installed (bare-metal ISO) | [Kickstart `%post`](#bare-metal-kickstart) drop-in | none — effective on first boot |
-| Already booted (cloud AMI/QCOW2, Terraform-provisioned, no-touch-joined, or any existing node) | [`MachineConfigChange`](#already-booted-nodes-machineconfigchange) after the MKE install | one rolling reboot, driven by the same controller |
+| Cloud instance on its first boot (AMI/QCOW2, incl. no-touch-joined workers) | [cloud-init](#cloud-cloud-init--amiqcow2-builds-only) `write_files` + `power_state` | one, at the end of cloud-init on that node |
+| Existing cluster, nodes already running | [`MachineConfigChange`](#existing-cluster-machineconfigchange) via the machine-config-controller | one rolling reboot across the cluster |
 
 > [!NOTE]
-> Should a future image ship these eight modules on its own allowlist, both
-> recipes become a no-op — each is safe to leave in place permanently rather
-> than removed once the image catches up. Verify with `lsmod` either way
+> Should a future image ship these eight modules on its own allowlist, all
+> three recipes become a no-op — each is safe to leave in place permanently
+> rather than removed once the image catches up. Verify with `lsmod` either way
 > (see [Verification](#verification)).
 
 ### Bare metal (kickstart)
@@ -189,17 +190,85 @@ EOF
 %end
 ```
 
-### Already-booted nodes (MachineConfigChange)
+### Cloud (cloud-init — AMI/QCOW2 builds only)
 
-On a node that has already booted the latch is set, so a drop-in written now
-(by cloud-init, over SSH, or any other way) only takes effect after a
-reboot — see the table in
-[Adding modules](image-architecture.md#adding-modules). Rather than
-scripting that reboot per node, use the `machine-config-controller` that
-`mke-install-playbook.yml` deploys: its `kernel.modules` module writes the
-drop-in on every node, and its `reboot` module performs a quorum-safe
-rolling reboot. Nothing here needs SSH, so it works after
-`disable_sshd_after_install`, and it covers nodes that join later.
+cloud-init runs on the **first boot** of the instance, after
+`systemd-modules-load.service` has already run and the latch has applied
+(the "already-running node" row of the table in
+[Adding modules](image-architecture.md#adding-modules)), so the drop-in it
+writes takes effect only on the next boot. cloud-init's own `power_state`
+module handles that: it runs once all other modules have finished, once
+per instance, and reboots only if its `condition` command fails — here,
+"the last module in the list is not loaded":
+
+```yaml
+#cloud-config
+write_files:
+  - path: /etc/modules-load.d/calico-ee-modules.conf
+    permissions: '0644'
+    content: |
+      ipip
+      ip6_tables
+      ip6table_filter
+      ip6table_mangle
+      ip6table_nat
+      ip6table_raw
+      ip6t_rpfilter
+      iptable_mangle
+      iptable_nat
+      iptable_raw
+      xt_sctp
+      xt_ipvs
+      ip_vs
+      xt_LOG
+      nf_log_syslog
+      nfnetlink_queue
+      nfnetlink_log
+      xt_NFQUEUE
+      xt_NFLOG
+      nft_log
+      ip_set_hash_ipport
+      xt_limit
+      nft_limit
+      xt_socket
+      xt_TPROXY
+      tun
+      sch_tbf
+      sch_ingress
+      cls_u32
+      act_mirred
+      ifb
+      sch_htb
+power_state:
+  mode: reboot
+  delay: now
+  timeout: 30
+  message: "Rebooting once to activate the Calico Enterprise kernel module allowlist"
+  condition: ['sh', '-c', '! lsmod | grep -q "^nft_log "']
+```
+
+No systemd unit or sentinel file is needed: `power_state` is
+once-per-instance by design, and the `condition` makes the second boot a
+no-op. If the same user-data also carries a no-touch join credential,
+follow the ordering guidance in
+[Join machines with no-touch join](../operations-guide/join-machines-no-touch.md#2-inject-the-credential-into-each-new-machine)
+so the reboot does not race the join.
+
+> [!NOTE]
+> Terraform `terraform/aws` in this repo does not pass custom `user_data`
+> through — the MKE3 module (`is_bootc_based = true`) renders its own
+> cloud-init and ignores anything else. Clusters provisioned that way are
+> "existing clusters" for the purposes of this section: use the
+> `MachineConfigChange` path below after the MKE install. See
+> [Provision with Terraform on AWS](provision-terraform-aws.md).
+
+### Existing cluster (MachineConfigChange)
+
+To add the modules to a cluster whose nodes are already running, use the
+`machine-config-controller` that `mke-install-playbook.yml` deploys: its
+`kernel.modules` module writes the drop-in on every node, and its `reboot`
+module performs a quorum-safe rolling reboot. Nothing here needs SSH, so it
+works after `disable_sshd_after_install`.
 
 Prerequisite: MKE installed (see
 [MKE installed with `--unmanaged-cni`](#mke-installed-with---unmanaged-cni))
@@ -209,10 +278,9 @@ from the cluster first — see
 [Machine configuration changes](../operations-guide/machine-config-operations.md#requirements).
 
 1. Declare the modules. This writes
-   `/etc/modules-load.d/90-machine-config-controller.conf` on every node.
-   The controller also attempts `modprobe`, which the latch refuses
-   (`Operation not permitted`), so the resource stays `Applied=False`
-   / `Applying` until step 2 — that is expected, not a failure:
+   `/etc/modules-load.d/90-machine-config-controller.conf` on every node;
+   the resource reports `Applied=True` once the nodes have rebooted in
+   step 2:
 
    ```yaml
    apiVersion: config.machine-config-controller.io/v1alpha1   # confirm against the live CRD
@@ -264,8 +332,7 @@ from the cluster first — see
    kubectl apply -f calico-ee-modules.yaml
    ```
 
-   Leave this resource in place: it is desired state, and the controller
-   applies it to any node that joins the cluster later.
+   Leave this resource in place; it is desired state.
 
 2. Reboot the nodes, one at a time, with a dedicated resource — `reboot`
    must be the only module in it and `concurrency` must stay `1` (see the
@@ -289,22 +356,16 @@ from the cluster first — see
    kubectl get machineconfigchange -w
    ```
 
-   Each node comes back with the modules loaded and its pending
-   `calico-ee-modules` job then succeeds; the modules resource reaches
-   `Applied=True` once the last node has rebooted. A 12-node cluster took
-   about 14 minutes with `concurrency: 1`. Delete the reboot resource
-   afterwards — it is a trigger, and leaving it applied re-arms a reboot
-   for any node that joins later.
+   Each node comes back with the modules loaded; the modules resource
+   reaches `Applied=True` once the last node has rebooted. A 12-node
+   cluster took about 14 minutes with `concurrency: 1`. Delete the reboot
+   resource afterwards — it is a trigger, and leaving it applied re-arms a
+   reboot for any node that joins later.
 
 Run both steps **before** installing Calico Enterprise (section 3), so
-Felix never starts without the modules loaded.
-
-> [!NOTE]
-> Terraform `terraform/aws` in this repo does not pass custom `user_data`
-> through — the MKE3 module (`is_bootc_based = true`) renders its own
-> cloud-init and ignores anything else — which is one more reason the
-> post-install path above is the one to use for cloud nodes. See
-> [Provision with Terraform on AWS](provision-terraform-aws.md).
+Felix never starts without the modules loaded. Nodes added to the cluster
+afterwards get their modules through their own provisioning (kickstart or
+cloud-init above).
 
 ## 2. Quick installation points
 
