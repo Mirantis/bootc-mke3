@@ -14,11 +14,9 @@ themselves.
 > deployed `--unmanaged-cni`. Every module and setting below was found by
 > hitting the failure it prevents, and the whole procedure was then re-run
 > in order on a second, freshly provisioned 12-node cluster with a real
-> workload (see [Verification](#verification)). Tracked on
-> [PRODENG-3783](https://mirantis.jira.com/browse/PRODENG-3783) (and
-> [PRODENG-3366](https://mirantis.jira.com/browse/PRODENG-3366) for the
-> earlier module set). The **migration** path from an MKE-managed Calico
-> OSS install is still unverified — see [Before you begin](#before-you-begin).
+> workload (see [Verification](#verification)). The **migration** path from
+> an MKE-managed Calico OSS install is still unverified — see
+> [Before you begin](#before-you-begin).
 
 ## Scope
 
@@ -28,7 +26,7 @@ kernel modules and NetworkManager interface ownership. It does not bundle
 Calico Enterprise, does not install it, and does not sequence it into the
 `ClusterUpgrade` upgrade flow. Installing, licensing, and upgrading Calico
 Enterprise itself is the operator's own procedure with Tigera. This scope
-was decided deliberately on PRODENG-3366: bundling Calico Enterprise into
+is deliberate: bundling Calico Enterprise into
 the image was assessed and rejected, primarily because Tigera's image
 distribution terms do not permit redistributing their images as part of a
 published `bootc-mke3` build.
@@ -40,7 +38,7 @@ published `bootc-mke3` build.
 - **A Kubernetes version compatible with your target Calico Enterprise
   release.** Confirm against Tigera's own compatibility matrix for the
   Kubernetes version MKE 3.9.x ships — this has not been confirmed for
-  this stack and is an open item on PRODENG-3366.
+  this stack (see [Known gaps](#known-gaps)).
 - **Your encapsulation mode decided up front** (IPIP is Calico's default;
   VXLAN and WireGuard are the alternatives) — it changes which kernel
   modules actually matter at runtime, though the image preloads all three
@@ -70,10 +68,10 @@ full mechanism.
 As of the current `bootc-mirantis` `main`, the image's boot-time allowlist
 already includes Calico Enterprise's `ipip`, IPv6 netfilter, IPVS/SCTP
 match, logging, L7 proxy/TPROXY, and bandwidth-QoS modules (added
-2026-09-08, [PRODENG-3366](https://mirantis.jira.com/browse/PRODENG-3366)).
-Six further modules that Calico Enterprise needs are present in the image's
-kernel package but **not on that allowlist**
-([PRODENG-3783](https://mirantis.jira.com/browse/PRODENG-3783)); each was
+2026-09-08). Six further modules that Calico Enterprise needs are present in
+the image's kernel package but **not on that allowlist** — the
+"present in the image but unloaded" case that
+[Adding modules](image-architecture.md#adding-modules) covers; each was
 found by hitting its failure on the validation cluster:
 
 | Module | Failure without it |
@@ -83,10 +81,11 @@ found by hitting its failure on the validation cluster:
 | `ip_set_hash_ipport` | `Failed to complete ipset restore` for the per-service `hash:ip,port` ipsets |
 | `nft_log` | `RULE_APPEND failed (No such file or directory)` on every `-j NFLOG` flow-log rule; Felix panics after ~10 retries and `calico-node` crash-loops, `calico-apiserver` with it. iptables-nft emits NFLOG as the native nftables `log` expression, so `xt_NFLOG` alone is not enough; flow logs are always-on in Calico Enterprise (`FELIX_FLOWLOGSFILEENABLED=true` is hard-coded by the operator) and cannot be turned off via `FelixConfiguration` |
 
-Add them at provision time using the extension point below. Whether the
-image's own allowlist should grow to include them is tracked on
-PRODENG-3783; the recipes here work on today's images and stay correct if
-it does.
+Add them at provision time through the `/etc/modules-load.d/` extension
+point described in [Adding modules](image-architecture.md#adding-modules);
+the two recipes below are that extension point applied to this list.
+Whether the image's own allowlist should grow to include them is an open
+decision; the recipes work on today's images and stay correct if it does.
 
 Full list to preload (safe to preload all of it regardless of which
 encapsulation mode or optional features you use — an unused loaded module
@@ -177,7 +176,8 @@ EOF
 ### Cloud (cloud-init — AMI/QCOW2 builds only)
 
 Unlike kickstart's `%post`, cloud-init's `write_files`/`runcmd` execute
-against an **already-booted** node — `cloud-final.service` runs well after
+against an **already-booted** node (the "on an already-running node" row of
+the table in [Adding modules](image-architecture.md#adding-modules)) — `cloud-final.service` runs well after
 `sysinit.target`, where the module latch has already been applied for that
 boot. A file written here only takes effect starting the *next* boot, so
 it needs a self-triggered reboot. This mirrors the worked `xt_statistic`
@@ -270,9 +270,11 @@ sysctl kernel.modules_disabled   # expect 1 -- confirms the latch, not a problem
 ```
 
 If any expected module is missing from `lsmod`, do not proceed —
-`modprobe` cannot fix it on a running node; see
-[Provisioning](#1-provisioning-preload-the-required-kernel-modules) above
-and reprovision or reboot after adding the drop-in.
+`modprobe` cannot fix it on a running node
+([the lockdown latch](image-architecture.md#the-allowlist-and-the-lockdown-latch)).
+Add the drop-in per [Adding modules](image-architecture.md#adding-modules)
+and reboot, or reprovision with the
+[step 1](#1-provisioning-preload-the-required-kernel-modules) payload.
 
 ### MKE installed with `--unmanaged-cni`
 
@@ -559,11 +561,11 @@ nodes):
   `v3.23.2` has not been checked against Tigera's published compatibility
   matrix; the validation install worked, but that is an observation, not
   confirmed Tigera support coverage.
-- The six PRODENG-3783 modules (`nfnetlink_queue`, `nfnetlink_log`,
+- The six additional modules (`nfnetlink_queue`, `nfnetlink_log`,
   `xt_NFQUEUE`, `xt_NFLOG`, `nft_log`, `ip_set_hash_ipport`) are not on
-  the allowlist of any released `bootc-mirantis` image; provision-time
-  preload is the only path today. Whether to add them to the image is an
-  open decision on PRODENG-3783.
+  the allowlist of any released `bootc-mirantis` image; the
+  [Adding modules](image-architecture.md#adding-modules) drop-in is the
+  only path today. Whether to add them to the image is an open decision.
 - `xt_limit` (`-m limit`) fails the same way on this image; Felix does not
   currently emit it, so it is not preloaded.
 - The Ansible installer has no dedicated variable for `--unmanaged-cni`;
