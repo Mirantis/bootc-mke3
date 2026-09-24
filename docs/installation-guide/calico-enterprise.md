@@ -12,7 +12,9 @@ themselves.
 > Kubernetes `v1.34.9-mirantis-2`, Calico Enterprise `v3.23.2`, operator
 > `v1.42.5`), installed as a **fresh** Calico Enterprise CNI with MKE
 > deployed `--unmanaged-cni`. Every module and setting below was found by
-> hitting the failure it prevents on that cluster, tracked on
+> hitting the failure it prevents, and the whole procedure was then re-run
+> in order on a second, freshly provisioned 12-node cluster with a real
+> workload (see [Verification](#verification)). Tracked on
 > [PRODENG-3783](https://mirantis.jira.com/browse/PRODENG-3783) (and
 > [PRODENG-3366](https://mirantis.jira.com/browse/PRODENG-3366) for the
 > earlier module set). The **migration** path from an MKE-managed Calico
@@ -299,13 +301,53 @@ ansible-playbook -i inventory.ini mke-install-playbook.yml -e @calico-ee-overrid
 > `mke install` fail with `TigopCompatibleManifest is unexpectedly false`.
 > The validated install used no `mke_config_src` TOML at all.
 
-Until step 3 completes, every node is `NotReady` with the
-`node.kubernetes.io/network-unavailable` taint and no pod-network pods
-schedule; that is expected, not a failure. Confirm MKE deployed no CNI:
+Until step 3 completes, every node is `NotReady` (taint
+`node.kubernetes.io/not-ready`) and no pod-network pods schedule; that is
+expected, not a failure. Confirm MKE deployed no CNI:
 
 ```sh
 kubectl get ds -n kube-system calico-node   # expect: NotFound
 ```
+
+### MKE privileged-attributes grant for the Tigera service accounts
+
+MKE's admission controller refuses pods that request `hostNetwork`,
+`hostPath` mounts, `hostPID` or `privileged` unless the pod's
+ServiceAccount is on the cluster-config allowlist — and the Tigera operator
+creates such pods (`calico-node`, `calico-typha`, `calico-apiserver`,
+`csi-node-driver`) under its own ServiceAccounts, not as an MKE admin. On the
+validation cluster the operator stalled at the first two with:
+
+```
+deployments.apps "calico-typha" is forbidden: non-admin user "tigera-operator:tigera-operator"
+[service account "calico-system:calico-typha"]. The configured privileged attributes access
+... for service accounts ("[hostbindmounts hostipc hostnetwork hostpid kernelcapabilities
+privileged]")("[system-upgrade:system-upgrade]") lack required permissions to use attributes
+[hostnetwork] for resource calico-typha
+```
+
+Before step 3, append the five `calico-system` ServiceAccounts to
+`priv_attributes_service_accounts` in the MKE cluster-config TOML, following
+the download / edit / upload procedure in
+[Run privileged support containers on MKE](../operations-guide/privileged-support-containers.md#2-grant-the-privilege-attributes)
+— **preserving** the `system-upgrade:system-upgrade` entry a default install
+already carries:
+
+```toml
+[cluster_config]
+  priv_attributes_allowed_for_service_accounts = ["hostIPC", "hostNetwork", "hostPID", "hostBindMounts", "privileged", "kernelCapabilities"]
+  priv_attributes_service_accounts = ["system-upgrade:system-upgrade", "calico-system:calico-node", "calico-system:calico-typha", "calico-system:calico-kube-controllers", "calico-system:calico-apiserver", "calico-system:csi-node-driver"]
+```
+
+`ansible/tasks/helpers/suc_priv_grant.py <downloaded.toml> <namespace:sa>`
+performs the same merge for one entry at a time and can be run once per
+ServiceAccount on the downloaded file before uploading it. The grant takes
+effect on the next admission decision; if the operator already hit the
+error it retries on its own within about a minute. If you later enable
+further Tigera components (compliance, intrusion detection, packet capture,
+egress gateways), watch `kubectl get tigerastatus` for the same `forbidden`
+message and add the ServiceAccount it names.
+
 
 ### CNI interfaces unmanaged by NetworkManager
 
@@ -382,11 +424,10 @@ kubectl create secret generic tigera-pull-secret \
   --type=kubernetes.io/dockerconfigjson -n tigera-operator \
   --from-file=.dockerconfigjson=<path/to/pull-secret.json>
 
-# 4. Custom resources -- review before applying; uncomment optional
-#    features (compliance, packet capture) you want enabled, and set
-#    flexVolumePath: None (see below) before creating
+# 4. Custom resources -- trim to what this stack can run (see below), set
+#    flexVolumePath: None, then create
 curl -O -L https://downloads.tigera.io/ee/${CALICO_EE_VERSION}/manifests/custom-resources.yaml
-# edit custom-resources.yaml as needed
+# edit custom-resources.yaml as described in the next two subsections
 kubectl create -f custom-resources.yaml
 
 # Watch rollout
@@ -400,6 +441,21 @@ Wait until `apiserver` reports `Available` before continuing.
 kubectl create -f </path/to/license.yaml>
 watch kubectl get tigerastatus
 ```
+
+### Which CRs from `custom-resources.yaml` to apply
+
+The shipped Enterprise file contains `Installation`, `APIServer`,
+`Monitor`, `Manager`, `IntrusionDetection`, `LogStorage`, `LogCollector`
+and `PolicyRecommendation`. `LogStorage` runs Elasticsearch and needs a
+default `StorageClass` with dynamic provisioning; a `bootc-mke3` install
+has none (`kubectl get sc` → `No resources found`), and `Manager`,
+`IntrusionDetection`, `LogCollector` and `PolicyRecommendation` depend on
+it. Without storage, keep **`Installation`, `APIServer` and `Monitor`** and
+delete the rest — that is what the validation run applied. Keep `Monitor`
+even though it looks optional: the Tigera operator creates the RBAC for the
+`tigera-prometheus-operator` deployed in step 2 only when a `Monitor` CR
+exists, and without it that operator crash-loops with `no controller can be
+started, check the RBAC permissions of the service account`.
 
 ### `Installation` CR: `flexVolumePath: None`
 
@@ -430,7 +486,23 @@ spec:
 > migration-path question flagged in [Before you begin](#before-you-begin)
 > — do not skip that confirmation because the commands look identical.
 
+### License state gates several features silently
+
+Felix reads the `LicenseKey` at startup and disables licensed features it
+cannot validate, logging warnings rather than failing. With an expired key
+(past its 30-day grace) the validation cluster logged
+`License for Flow Logs File Output feature has expired. Flow logs will be
+disabled.` and the same for L7 logs and Prometheus metrics, while
+`tigerastatus` stayed `Available` and `NetworkPolicy` enforcement kept
+working. Check `kubectl get licensekeys.projectcalico.org default -o
+jsonpath='{.status}'` for `expiry` and `maxnodes` before reading a quiet
+`tigerastatus` as "everything is on". The `-j NFLOG` collector rules are
+programmed regardless of license state — `nft_log` is required even on an
+unlicensed cluster.
+
 ## Verification
+
+Platform checks:
 
 - `lsmod` still shows every module from
   [step 1](#1-provisioning-preload-the-required-kernel-modules) loaded,
@@ -438,19 +510,46 @@ spec:
   come from weakening the image's hardening.
 - `kubectl get pods -n calico-system` — `calico-node` `Running` with a
   restart count of `0`, not just eventually-`Running` after crash-looping.
+  On the validation cluster all 12 were `1/1` within two minutes of the
+  privileged-attributes grant, with zero restarts.
 - `nmcli device status` — Calico's interfaces (`cali*`, and whichever
   tunnel device your encapsulation mode uses) read `unmanaged`.
-- `watch kubectl get tigerastatus` — every component `Available`.
-- Cross-node pod-to-pod connectivity on your chosen encapsulation mode
-  (e.g. `tunl0` present and carrying traffic in IPIP mode).
+- `kubectl get tigerastatus` — every applied component `Available`.
+- BGP mesh: `kubectl exec -n calico-system <calico-node pod> -c calico-node
+  -- birdcl show protocols` lists every other node as `Established`
+  (11 of 11 on the validation cluster).
+
+Dataplane checks with a real workload (all passed on the validation
+cluster; a 6-replica `nginx` Deployment spread across the workers, a
+`ClusterIP` and a `NodePort` Service, and `curl` client pods on other
+nodes):
+
+- Pod-to-pod across nodes: `curl` from a client pod to each backend pod IP
+  returns `200`, including every cross-node pair (IPIP encapsulation in the
+  default `ippool`).
+- Service: repeated `curl http://<service>/` from a pod returns `200`;
+  `nslookup <service>.<ns>.svc.cluster.local` resolves to the ClusterIP.
+- NodePort from a pod to a worker's InternalIP returns `200`; pod egress to
+  the internet returns `200`.
+- Policy enforcement, using `projectcalico.org/v3` `NetworkPolicy` through
+  the Enterprise API server: a namespace-wide `selector: all()` deny with
+  `types: [Ingress, Egress]` blocks the client immediately; adding an
+  ingress allow on the backend from `app == 'client'` plus a matching client
+  egress rule (TCP 80 to the backend and UDP 53) restores exactly that
+  path, while a third pod with the egress allow but no ingress allow on the
+  backend stays blocked.
 
 ## Known gaps
 
-- Validation reached `calico-node` `1/1` on all 12 nodes and
-  `tigerastatus` `apiserver`/`calico`/`ippools`/`tiers` all `Available`
-  (steps 1-4). The license step (5), cross-node pod networking, DNS,
-  NetworkPolicy enforcement and workload traffic under Calico Enterprise
-  have not yet been exercised on this stack.
+- Validation covered steps 1-5 plus the dataplane checks above on 12
+  nodes. Flow-log, L7-log and Prometheus file/metrics output could not be
+  verified: the only license available had expired (see
+  [License state](#license-state-gates-several-features-silently)).
+  `LogStorage`, `Manager`, `IntrusionDetection`, `LogCollector` and
+  `PolicyRecommendation` were not applied (no StorageClass).
+- The Ansible installer has no task for the Tigera privileged-attributes
+  grant; it is done by hand (or with `suc_priv_grant.py`) between the MKE
+  install and step 3.
 - The OSS-to-Enterprise migration path for an MKE-managed (non-operator)
   Calico install is unconfirmed; Tigera's documented upgrade path assumes
   an operator-installed OSS baseline that MKE3 does not use.
