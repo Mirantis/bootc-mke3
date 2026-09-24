@@ -255,6 +255,22 @@ worker showing `Down` in `docker node ls` indefinitely, with the message
 node is broken. Don't block a batch, or start troubleshooting, on
 `docker node ls`/the MKE UI alone; cross-check `kubectl get nodes` first.
 
+> [!NOTE]
+> `Ready` in `kubectl get nodes` does not mean the node's local firewall is
+> configured yet. `mke-images.service` is ordered `Before=getty.target`
+> (`WantedBy=getty.target`), which places it ahead of `multi-user.target` in
+> the boot sequence — and `cloud-final.service` (the unit that runs
+> cloud-init's `runcmd`, i.e. the firewalld/`xt_statistic` steps above on
+> cloud builds) depends on `multi-user.target`. `mke-images.service` loading
+> the baked-in product/controller image tars can take several minutes, so on
+> a freshly no-touch-joined node the kubelet/swarm-join path can report
+> `Ready` well before `cloud-final.service` has run and opened the firewall.
+> The gap self-heals — `cloud-final.service` always runs eventually — but
+> automation that joins a node and immediately probes/execs against it over
+> the cluster ports (rather than waiting on the join handshake alone, which
+> is outbound-only) should wait for `systemctl is-active mke-images` on that
+> node first, or tolerate closed ports for a few minutes after `Ready`.
+
 On the joined machine (if you have access):
 
 ```
