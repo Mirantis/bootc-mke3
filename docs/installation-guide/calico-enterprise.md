@@ -13,8 +13,9 @@ themselves.
 > `v1.42.5`), installed as a **fresh** Calico Enterprise CNI with MKE
 > deployed `--unmanaged-cni`. Every module and setting below was found by
 > hitting the failure it prevents, and the whole procedure was then re-run
-> in order on a second, freshly provisioned 12-node cluster with a real
-> workload (see [Verification](#verification)). The **migration** path from
+> in order on further freshly provisioned 12-node clusters with a real
+> workload, including VXLAN + eBPF (see [Verification](#verification) and
+> [section 4](#4-encapsulation-and-dataplane-options)). The **migration** path from
 > an MKE-managed Calico OSS install is still unverified — see
 > [Before you begin](#before-you-begin).
 
@@ -61,7 +62,9 @@ published `bootc-mke3` build.
 The image loads a fixed kernel-module allowlist at boot and then sets
 `kernel.modules_disabled=1`, a **one-way latch**: no module can be loaded
 for the rest of that boot session by any means once it applies — not
-`modprobe`, not on-demand autoload, not a sysctl or `MachineConfigChange`.
+`modprobe`, not on-demand autoload, not a sysctl change; a
+`MachineConfigChange` can only persist the list for the next boot and
+reboot the node.
 See [Image architecture](image-architecture.md#kernel-modules) for the
 full mechanism.
 
@@ -127,11 +130,19 @@ ifb
 sch_htb
 ```
 
+Two ways to get the list onto the allowlist, depending on whether the
+node has booted yet:
+
+| Node state | Method | Reboot |
+|---|---|---|
+| Not yet installed (bare-metal ISO) | [Kickstart `%post`](#bare-metal-kickstart) drop-in | none — effective on first boot |
+| Already booted (cloud AMI/QCOW2, Terraform-provisioned, no-touch-joined, or any existing node) | [`MachineConfigChange`](#already-booted-nodes-machineconfigchange) after the MKE install | one rolling reboot, driven by the same controller |
+
 > [!NOTE]
-> Should a future image ship these eight modules on its own allowlist, the two
-> provision-time recipes below become a no-op — both are written to be safe
-> to leave in place permanently rather than removed once the image catches
-> up. Verify with `lsmod` either way (see [Verification](#verification)).
+> Should a future image ship these eight modules on its own allowlist, both
+> recipes become a no-op — each is safe to leave in place permanently rather
+> than removed once the image catches up. Verify with `lsmod` either way
+> (see [Verification](#verification)).
 
 ### Bare metal (kickstart)
 
@@ -178,90 +189,121 @@ EOF
 %end
 ```
 
-### Cloud (cloud-init — AMI/QCOW2 builds only)
+### Already-booted nodes (MachineConfigChange)
 
-Unlike kickstart's `%post`, cloud-init's `write_files`/`runcmd` execute
-against an **already-booted** node (the "on an already-running node" row of
-the table in [Adding modules](image-architecture.md#adding-modules)) — `cloud-final.service` runs well after
-`sysinit.target`, where the module latch has already been applied for that
-boot. A file written here only takes effect starting the *next* boot, so
-it needs a self-triggered reboot. This mirrors the worked `xt_statistic`
-example in
-[Join machines with no-touch join](../operations-guide/join-machines-no-touch.md#2-inject-the-credential-into-each-new-machine)
-(its "Kernel module preload" requirement bullet), adapted here without
-that example's swarm-join gate, since a Calico
-Enterprise install is not part of the built-in join flow:
+On a node that has already booted the latch is set, so a drop-in written now
+(by cloud-init, over SSH, or any other way) only takes effect after a
+reboot — see the table in
+[Adding modules](image-architecture.md#adding-modules). Rather than
+scripting that reboot per node, use the `machine-config-controller` that
+`mke-install-playbook.yml` deploys: its `kernel.modules` module writes the
+drop-in on every node, and its `reboot` module performs a quorum-safe
+rolling reboot. Nothing here needs SSH, so it works after
+`disable_sshd_after_install`, and it covers nodes that join later.
 
-```yaml
-#cloud-config
-write_files:
-  - path: /etc/modules-load.d/calico-ee-modules.conf
-    permissions: '0644'
-    content: |
-      ipip
-      ip6_tables
-      ip6table_filter
-      ip6table_mangle
-      ip6table_nat
-      ip6table_raw
-      ip6t_rpfilter
-      iptable_mangle
-      iptable_nat
-      iptable_raw
-      xt_sctp
-      xt_ipvs
-      ip_vs
-      xt_LOG
-      nf_log_syslog
-      nfnetlink_queue
-      nfnetlink_log
-      xt_NFQUEUE
-      xt_NFLOG
-      nft_log
-      ip_set_hash_ipport
-      xt_limit
-      nft_limit
-      xt_socket
-      xt_TPROXY
-      tun
-      sch_tbf
-      sch_ingress
-      cls_u32
-      act_mirred
-      ifb
-      sch_htb
-  - path: /etc/systemd/system/calico-ee-modules-reboot.service
-    permissions: '0644'
-    content: |
-      [Unit]
-      Description=Reboot once to activate Calico Enterprise module preload
-      ConditionPathExists=!/var/lib/calico-ee-modules-reboot-done
+Prerequisite: MKE installed (see
+[MKE installed with `--unmanaged-cni`](#mke-installed-with---unmanaged-cni))
+and the controller healthy per the
+[controllers runbook](install-controllers.md). Read the CRD `apiVersion`
+from the cluster first — see
+[Machine configuration changes](../operations-guide/machine-config-operations.md#requirements).
 
-      [Service]
-      Type=oneshot
-      ExecStart=/bin/sh -c 'touch /var/lib/calico-ee-modules-reboot-done; lsmod | grep -q "^nft_log " && exit 0; systemctl reboot'
+1. Declare the modules. This writes
+   `/etc/modules-load.d/90-machine-config-controller.conf` on every node.
+   The controller also attempts `modprobe`, which the latch refuses
+   (`Operation not permitted`), so the resource stays `Applied=False`
+   / `Applying` until step 2 — that is expected, not a failure:
 
-      [Install]
-      WantedBy=multi-user.target
-runcmd:
-  - systemctl enable --now calico-ee-modules-reboot.service
-```
+   ```yaml
+   apiVersion: config.machine-config-controller.io/v1alpha1   # confirm against the live CRD
+   kind: MachineConfigChange
+   metadata:
+     name: calico-ee-modules
+   spec:
+     kernel:
+       modules:
+         load:
+           - ipip
+           - ip6_tables
+           - ip6table_filter
+           - ip6table_mangle
+           - ip6table_nat
+           - ip6table_raw
+           - ip6t_rpfilter
+           - iptable_mangle
+           - iptable_nat
+           - iptable_raw
+           - xt_sctp
+           - xt_ipvs
+           - ip_vs
+           - xt_LOG
+           - nf_log_syslog
+           - nfnetlink_queue
+           - nfnetlink_log
+           - xt_NFQUEUE
+           - xt_NFLOG
+           - nft_log
+           - ip_set_hash_ipport
+           - xt_limit
+           - nft_limit
+           - xt_socket
+           - xt_TPROXY
+           - tun
+           - sch_tbf
+           - sch_ingress
+           - cls_u32
+           - act_mirred
+           - ifb
+           - sch_htb
+     rollout:
+       concurrency: 12
+       drain: false
+   ```
 
-The `[Install]` section is required: without it `systemctl enable` fails
-and the unit never runs (found while validating this recipe). The `lsmod`
-check uses `nft_log` because it is the last module in the list to have
-been added — if it is loaded the whole file was processed.
+   ```sh
+   kubectl apply -f calico-ee-modules.yaml
+   ```
 
-Run this **before** installing Calico Enterprise, not after, so Felix
-never starts even once without the modules loaded.
+   Leave this resource in place: it is desired state, and the controller
+   applies it to any node that joins the cluster later.
+
+2. Reboot the nodes, one at a time, with a dedicated resource — `reboot`
+   must be the only module in it and `concurrency` must stay `1` (see the
+   [reboot rules](../operations-guide/machine-config-operations.md#reboot-always-a-dedicated-resource)):
+
+   ```yaml
+   apiVersion: config.machine-config-controller.io/v1alpha1   # confirm against the live CRD
+   kind: MachineConfigChange
+   metadata:
+     name: calico-ee-modules-reboot
+   spec:
+     reboot:
+       token: "calico-ee-modules-<date or change id>"
+     rollout:
+       concurrency: 1
+       drain: true
+   ```
+
+   ```sh
+   kubectl apply -f calico-ee-modules-reboot.yaml
+   kubectl get machineconfigchange -w
+   ```
+
+   Each node comes back with the modules loaded and its pending
+   `calico-ee-modules` job then succeeds; the modules resource reaches
+   `Applied=True` once the last node has rebooted. A 12-node cluster took
+   about 14 minutes with `concurrency: 1`. Delete the reboot resource
+   afterwards — it is a trigger, and leaving it applied re-arms a reboot
+   for any node that joins later.
+
+Run both steps **before** installing Calico Enterprise (section 3), so
+Felix never starts without the modules loaded.
 
 > [!NOTE]
-> **Terraform `terraform/aws` in this repo does not pass custom `user_data`
-> through** — the MKE3 module (`is_bootc_based = true`) renders its own
-> cloud-init and silently ignores anything else. On clusters provisioned
-> that way, apply the drop-in over SSH before `disable_sshd_after_install`
-> takes effect, then reboot each node; the validation cluster was prepared
-> exactly this way. See
+> Terraform `terraform/aws` in this repo does not pass custom `user_data`
+> through — the MKE3 module (`is_bootc_based = true`) renders its own
+> cloud-init and ignores anything else — which is one more reason the
+> post-install path above is the one to use for cloud nodes. See
 > [Provision with Terraform on AWS](provision-terraform-aws.md).
 
 ## 2. Quick installation points
@@ -351,7 +393,8 @@ connectivity failures until firewalld was disabled. Set
 `disable_firewalld: true` for managers (as in the overrides file above; see
 [Harden MKE3 / Kubernetes](../operations-guide/harden-mke3-kubernetes.md)).
 No-touch-joined workers are never touched by the installer, so disable it
-in the same provisioning payload as the module preload:
+in the kickstart alongside the module preload, or via cloud-init on cloud
+builds:
 
 ```
 %post --erroronfail
@@ -540,6 +583,97 @@ jsonpath='{.status}'` for `expiry` and `maxnodes` before reading a quiet
 `tigerastatus` as "everything is on". The `-j NFLOG` collector rules are
 programmed regardless of license state — `nft_log` is required even on an
 unlicensed cluster.
+
+## 4. Encapsulation and dataplane options
+
+The install above uses Calico's defaults: IPIP encapsulation and the
+iptables dataplane. Both alternatives were validated on the same stack.
+
+### VXLAN encapsulation
+
+Set it in the `Installation` CR before step 5 — the operator owns the
+`IPPool` and reverts direct edits to it:
+
+```yaml
+spec:
+  calicoNetwork:
+    ipPools:
+      - name: default-ipv4-ippool
+        cidr: 192.168.0.0/16
+        encapsulation: VXLAN
+        natOutgoing: Enabled
+        nodeSelector: all()
+```
+
+No additional modules: `vxlan`, `udp_tunnel` and `ip6_udp_tunnel` are on
+the image allowlist. Validated on a fresh 12-node cluster: `calico-node`
+Ready on every node in 30 s, `vxlan.calico` carrying the cross-node
+routes, all dataplane checks in [Verification](#verification) passing.
+
+### eBPF dataplane
+
+Follow Tigera's
+[Enable eBPF on an existing cluster](https://docs.tigera.io/calico-enterprise/latest/operations/ebpf/enabling-ebpf)
+including its MKE-specific steps, all of which MKE 3.9.6 accepted as
+documented:
+
+1. Point Calico at the API server without kube-proxy — MKE's node-local
+   reverse proxy:
+
+   ```yaml
+   kind: ConfigMap
+   apiVersion: v1
+   metadata:
+     name: kubernetes-services-endpoint
+     namespace: tigera-operator
+   data:
+     KUBERNETES_SERVICE_HOST: 'proxy.local'
+     KUBERNETES_SERVICE_PORT: '6444'
+   ```
+
+2. Disable MKE's kube-proxy in the cluster-config TOML (same download /
+   edit / upload round-trip as section 3 step 1):
+   `kube_proxy_mode = "disabled"` and `kube_default_drop_masq_bits = true`.
+   The `ucp-kube-proxy` container keeps running in an idle mode and its
+   `KUBE-SERVICES` chain empties.
+
+3. Move Calico's VXLAN off UDP 4789, which Docker Swarm's overlay owns —
+   in eBPF mode Felix recreates `vxlan.calico` as a catch-all on its port
+   and the kernel rejects the clash:
+
+   ```sh
+   kubectl patch felixconfiguration default --type merge -p '{"spec":{"vxlanPort":4790}}'
+   ```
+
+   Confirm every node shows `dstport 4790` before continuing.
+
+4. Switch the dataplane:
+
+   ```sh
+   kubectl patch installation.operator.tigera.io default --type merge \
+     -p '{"spec":{"calicoNetwork":{"linuxDataplane":"BPF"}}}'
+   ```
+
+Validated on the same 12-node VXLAN cluster: rollout complete in under
+two minutes with zero `calico-node` restarts; every check in
+[Verification](#verification) passed, with Services served by Felix's
+BPF kube-proxy replacement.
+
+No additional kernel modules. `cls_bpf` and `act_bpf` are modules on this
+kernel and are not loaded, but Felix does not use them: the RHEL 9 kernel
+has TCX, and Felix attaches its programs as `tcx/ingress` and `tcx/egress`
+links (`bpftool net show dev <cali iface>`). BTF, cgroup v2, `bpffs` and
+the BPF JIT are all present, and nothing in the image's sysctl hardening
+affects BPF. On a kernel without TCX, `cls_bpf` would have to be added to
+the allowlist like any other module.
+
+### WireGuard encryption
+
+`kubectl patch felixconfiguration default --type merge -p '{"spec":{"wireguardEnabled":true}}'`
+works with the modules already on the allowlist (`wireguard`,
+`curve25519_x86_64`, `libcurve25519_generic`); every node publishes a
+public key, `wireguard.cali` carries the pod routes via `ip rule` table 1,
+and traffic counters confirm the tunnel is used.
 
 ## Verification
 

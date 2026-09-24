@@ -102,7 +102,7 @@ drop-in takes effect depends on when it is created:
 | Created | Effective |
 |---|---|
 | Kickstart `%post` | **First boot**, no extra reboot — the installed system has not booted yet |
-| cloud-init `write_files`/`runcmd`, or any edit on a running node | **After one reboot** — cloud-init runs after `systemd-modules-load.service` on the first boot, so the latch is already set; gate a one-shot reboot unit on the file (see [Calico Enterprise](calico-enterprise.md#cloud-cloud-init--amiqcow2-builds-only) for a worked example) |
+| cloud-init `write_files`/`runcmd`, or any edit on a running node | **After one reboot** — cloud-init runs after `systemd-modules-load.service` on the first boot, so the latch is already set. On a cluster with the `machine-config-controller` deployed, a `MachineConfigChange` `kernel.modules.load` list plus a `reboot` resource does both the drop-in and the rolling reboot without SSH (see [Calico Enterprise](calico-enterprise.md#already-booted-nodes-machineconfigchange) for a worked example) |
 
 Because a module is only loadable if its `.ko` is reachable, this works for
 modules present in the image but unloaded; it cannot add a module the image
