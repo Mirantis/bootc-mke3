@@ -101,8 +101,8 @@ drop-in takes effect depends on when it is created:
 
 | Created | Effective |
 |---|---|
-| At provision time (kickstart `%post`, cloud-init) | **First boot**, no extra reboot — the installed system has not booted yet |
-| On an already-running node | **After one reboot** — the latch is already set on the current boot |
+| Kickstart `%post` | **First boot**, no extra reboot — the installed system has not booted yet |
+| cloud-init `write_files`/`runcmd`, or any edit on a running node | **After one reboot** — cloud-init runs after `systemd-modules-load.service` on the first boot, so the latch is already set. In cloud-init, pair the file with a conditional `power_state: reboot`; across an existing cluster, a `MachineConfigChange` `kernel.modules.load` list plus a `reboot` resource does both without SSH. Worked examples of both in [Calico Enterprise](calico-enterprise.md#1-provisioning-preload-the-required-kernel-modules) |
 
 Because a module is only loadable if its `.ko` is reachable, this works for
 modules present in the image but unloaded; it cannot add a module the image
