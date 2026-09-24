@@ -588,9 +588,6 @@ nodes):
   [License state](#license-state-gates-several-features-silently)).
   `LogStorage`, `Manager`, `IntrusionDetection`, `LogCollector` and
   `PolicyRecommendation` were not applied (no StorageClass).
-- The Ansible installer has no task for the Tigera privileged-attributes
-  grant; it is a manual TOML round-trip (section 3, step 1) between the MKE
-  install and the Tigera operator install.
 - The OSS-to-Enterprise migration path for an MKE-managed (non-operator)
   Calico install is unconfirmed; Tigera's documented upgrade path assumes
   an operator-installed OSS baseline that MKE3 does not use.
