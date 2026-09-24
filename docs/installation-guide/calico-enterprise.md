@@ -6,14 +6,17 @@ what to check before running Tigera's installer, and the installer steps
 themselves.
 
 > [!IMPORTANT]
-> **Not yet verified end-to-end.** This procedure has not been run against
-> a live Calico Enterprise install — the team holds no Tigera license or
-> registry entitlement today. It is compiled from Tigera's published
-> requirements/install docs, `lsmod` evidence gathered on shipped images,
-> and one customer failure report (Tigera support case 00010382), tracked
-> as [PRODENG-3366](https://mirantis.jira.com/browse/PRODENG-3366) and
-> [PRODENG-3783](https://mirantis.jira.com/browse/PRODENG-3783). Treat
-> every step as a starting point to validate, not a confirmed runbook.
+> **Verified live on 2026-09-24** against a 3-manager / 9-worker
+> `bootc-mke3` cluster on AWS (image
+> `r9.8-mcr29.6.1.1-mke3.9.6-cloud-20260922-83`, MKE 3.9.6 /
+> Kubernetes `v1.34.9-mirantis-2`, Calico Enterprise `v3.23.2`, operator
+> `v1.42.5`), installed as a **fresh** Calico Enterprise CNI with MKE
+> deployed `--unmanaged-cni`. Every module and setting below was found by
+> hitting the failure it prevents on that cluster, tracked on
+> [PRODENG-3783](https://mirantis.jira.com/browse/PRODENG-3783) (and
+> [PRODENG-3366](https://mirantis.jira.com/browse/PRODENG-3366) for the
+> earlier module set). The **migration** path from an MKE-managed Calico
+> OSS install is still unverified — see [Before you begin](#before-you-begin).
 
 ## Scope
 
@@ -42,14 +45,16 @@ published `bootc-mke3` build.
   encapsulation module sets regardless.
 
 > [!WARNING]
-> **MKE3 already runs Calico as its CNI, installed directly by MKE rather
-> than by Tigera's operator.** Tigera's documented "Calico → Calico
-> Enterprise" upgrade path assumes an operator-installed Calico Open
-> Source baseline; that assumption does not hold here. Do not run this
-> procedure against a cluster with live workloads until Tigera support has
-> confirmed a migration path for an MKE-managed, non-operator Calico
-> install — ask them directly, referencing your MKE3/Calico OSS versions.
-> This document does not yet have that confirmation.
+> **MKE3 installs Calico Open Source as its CNI by default, directly rather
+> than via Tigera's operator.** The validated path is to install MKE with
+> `--unmanaged-cni` so that no MKE-managed Calico exists and the Tigera
+> operator owns the CNI from the first node — see
+> [MKE installed with `--unmanaged-cni`](#mke-installed-with---unmanaged-cni).
+> Converting an *existing* MKE-managed Calico OSS cluster to Calico
+> Enterprise has not been tested; Tigera's documented "Calico → Calico
+> Enterprise" upgrade assumes an operator-installed OSS baseline that MKE3
+> does not use. Do not attempt that on a cluster with live workloads
+> without Tigera support confirming a migration path for it.
 
 ## 1. Provisioning: preload the required kernel modules
 
@@ -63,14 +68,21 @@ full mechanism.
 As of the current `bootc-mirantis` `main`, the image preloads Calico
 Enterprise's `ipip`, IPv6 netfilter, IPVS/SCTP match, logging, L7
 proxy/TPROXY, and bandwidth-QoS modules (added 2026-09-08,
-[PRODENG-3366](https://mirantis.jira.com/browse/PRODENG-3366)). Two
-further modules Felix requires at startup, `nfnetlink_queue` and
-`nfnetlink_log` (Tigera support case 00010382 — Felix crash-loops without
-them), are in an **open, not-yet-merged** PR
+[PRODENG-3366](https://mirantis.jira.com/browse/PRODENG-3366)). Six
+further modules are in an **open, not-yet-merged** PR
 ([bootc-mirantis#210](https://github.com/Mirantis/bootc-mirantis/pull/210),
-[PRODENG-3783](https://mirantis.jira.com/browse/PRODENG-3783)). Until that
-merges and you're on an image built after it, add them yourself at
-provision time using the same extension point.
+[PRODENG-3783](https://mirantis.jira.com/browse/PRODENG-3783)); each was
+found by hitting its failure on the validation cluster:
+
+| Module | Failure without it |
+|---|---|
+| `nfnetlink_queue`, `nfnetlink_log` | Felix exits at startup (Tigera support case 00010382) |
+| `xt_NFQUEUE`, `xt_NFLOG` | `iptables-nft-restore`: `Extension NFQUEUE/NFLOG ... missing kernel module?` |
+| `ip_set_hash_ipport` | `Failed to complete ipset restore` for the per-service `hash:ip,port` ipsets |
+| `nft_log` | `RULE_APPEND failed (No such file or directory)` on every `-j NFLOG` flow-log rule; Felix panics after ~10 retries and `calico-node` crash-loops, `calico-apiserver` with it. iptables-nft emits NFLOG as the native nftables `log` expression, so `xt_NFLOG` alone is not enough; flow logs are always-on in Calico Enterprise (`FELIX_FLOWLOGSFILEENABLED=true` is hard-coded by the operator) and cannot be turned off via `FelixConfiguration` |
+
+Until #210 merges and you're on an image built after it, add them yourself
+at provision time using the same extension point.
 
 Full list to preload (safe to preload all of it regardless of which
 encapsulation mode or optional features you use — an unused loaded module
@@ -94,6 +106,10 @@ xt_LOG
 nf_log_syslog
 nfnetlink_queue
 nfnetlink_log
+xt_NFQUEUE
+xt_NFLOG
+nft_log
+ip_set_hash_ipport
 xt_socket
 xt_TPROXY
 tun
@@ -106,11 +122,10 @@ sch_htb
 ```
 
 > [!NOTE]
-> Once you're on an image that already ships `nfnetlink_queue`/
-> `nfnetlink_log` (post-#210), the two provision-time recipes below become
-> a no-op — both are written to be safe to leave in place permanently
-> rather than removed once the image catches up. Verify with `lsmod`
-> either way (see [Verification](#verification)).
+> Once you're on an image that already ships the six #210 modules, the two
+> provision-time recipes below become a no-op — both are written to be safe
+> to leave in place permanently rather than removed once the image catches
+> up. Verify with `lsmod` either way (see [Verification](#verification)).
 
 ### Bare metal (kickstart)
 
@@ -138,6 +153,10 @@ xt_LOG
 nf_log_syslog
 nfnetlink_queue
 nfnetlink_log
+xt_NFQUEUE
+xt_NFLOG
+nft_log
+ip_set_hash_ipport
 xt_socket
 xt_TPROXY
 tun
@@ -187,6 +206,10 @@ write_files:
       nf_log_syslog
       nfnetlink_queue
       nfnetlink_log
+      xt_NFQUEUE
+      xt_NFLOG
+      nft_log
+      ip_set_hash_ipport
       xt_socket
       xt_TPROXY
       tun
@@ -205,13 +228,30 @@ write_files:
 
       [Service]
       Type=oneshot
-      ExecStart=/bin/sh -c 'touch /var/lib/calico-ee-modules-reboot-done; lsmod | grep -q nfnetlink_queue && exit 0; systemctl reboot'
+      ExecStart=/bin/sh -c 'touch /var/lib/calico-ee-modules-reboot-done; lsmod | grep -q "^nft_log " && exit 0; systemctl reboot'
+
+      [Install]
+      WantedBy=multi-user.target
 runcmd:
   - systemctl enable --now calico-ee-modules-reboot.service
 ```
 
+The `[Install]` section is required: without it `systemctl enable` fails
+and the unit never runs (found while validating this recipe). The `lsmod`
+check uses `nft_log` because it is the last module in the list to have
+been added — if it is loaded the whole file was processed.
+
 Run this **before** installing Calico Enterprise, not after, so Felix
 never starts even once without the modules loaded.
+
+> [!NOTE]
+> **Terraform `terraform/aws` in this repo does not pass custom `user_data`
+> through** — the MKE3 module (`is_bootc_based = true`) renders its own
+> cloud-init and silently ignores anything else. On clusters provisioned
+> that way, apply the drop-in over SSH before `disable_sshd_after_install`
+> takes effect, then reboot each node; the validation cluster was prepared
+> exactly this way. See
+> [Provision with Terraform on AWS](provision-terraform-aws.md).
 
 ## 2. Quick installation points
 
@@ -221,7 +261,7 @@ Check these on a target node before running the Tigera installer.
 
 ```sh
 cat /usr/lib/modules-load.d/mke-modules.conf /etc/modules-load.d/*.conf 2>/dev/null
-lsmod | grep -E 'ipip|nfnetlink_queue|nfnetlink_log|ip6_tables|xt_ipvs'
+lsmod | grep -E '^(ipip|nfnetlink_queue|nfnetlink_log|xt_NFQUEUE|xt_NFLOG|nft_log|ip_set_hash_ipport|ip6_tables|xt_ipvs) '
 sysctl kernel.modules_disabled   # expect 1 -- confirms the latch, not a problem
 ```
 
@@ -229,6 +269,43 @@ If any expected module is missing from `lsmod`, do not proceed —
 `modprobe` cannot fix it on a running node; see
 [Provisioning](#1-provisioning-preload-the-required-kernel-modules) above
 and reprovision or reboot after adding the drop-in.
+
+### MKE installed with `--unmanaged-cni`
+
+Install MKE with `--unmanaged-cni` so it deploys no Calico OSS of its own
+and the Tigera operator owns the CNI from the start. With the
+`mke-install-playbook.yml` in this repo, append the flag to
+`mke_install_flags` in an extra-vars file — keep the four default entries
+from `vars/common-vars.yml`, since overriding the list replaces it:
+
+```yaml
+# calico-ee-overrides.yml
+mke_install_flags:
+  - '--san="{{ mke_url }}"'
+  - '--default-node-orchestrator="kubernetes"'
+  - '--nodeport-range="32768-35535"'
+  - "--force-minimums"
+  - "--unmanaged-cni"
+disable_firewalld: true
+```
+
+```sh
+ansible-playbook -i inventory.ini mke-install-playbook.yml -e @calico-ee-overrides.yml
+```
+
+> [!WARNING]
+> Pass `--unmanaged-cni` as a CLI flag only. Setting `unmanaged_cni = true`
+> in an MKE config TOML (`mke_config_src`) instead — or alongside — makes
+> `mke install` fail with `TigopCompatibleManifest is unexpectedly false`.
+> The validated install used no `mke_config_src` TOML at all.
+
+Until step 3 completes, every node is `NotReady` with the
+`node.kubernetes.io/network-unavailable` taint and no pod-network pods
+schedule; that is expected, not a failure. Confirm MKE deployed no CNI:
+
+```sh
+kubectl get ds -n kube-system calico-node   # expect: NotFound
+```
 
 ### CNI interfaces unmanaged by NetworkManager
 
@@ -252,12 +329,16 @@ nmcli device status   # cali*, tunl*, vxlan.calico, wireguard.cali devices shoul
 
 ### firewalld
 
-Tigera requires firewalld disabled on nodes running Calico Enterprise —
-it interferes with the rules Felix installs. On managers this is handled
-by the MKE3 Ansible installer's `disable_firewalld` variable (see
-[Harden MKE3 / Kubernetes](../operations-guide/harden-mke3-kubernetes.md));
-no-touch-joined workers are never touched by the installer, so disable it
-in the same provisioning payload as the module preload above:
+Tigera requires firewalld disabled on nodes running Calico Enterprise. The
+installer's default (`disable_firewalld: false`) keeps firewalld running
+with per-service port rules that do not cover Calico Enterprise's own
+ports — BGP 179, Typha 5473, IPIP (protocol 4), VXLAN 4789, WireGuard
+51820/51821 — and on the validation cluster that produced Typha and BGP
+connectivity failures until firewalld was disabled. Set
+`disable_firewalld: true` for managers (as in the overrides file above; see
+[Harden MKE3 / Kubernetes](../operations-guide/harden-mke3-kubernetes.md)).
+No-touch-joined workers are never touched by the installer, so disable it
+in the same provisioning payload as the module preload:
 
 ```
 %post --erroronfail
@@ -302,7 +383,8 @@ kubectl create secret generic tigera-pull-secret \
   --from-file=.dockerconfigjson=<path/to/pull-secret.json>
 
 # 4. Custom resources -- review before applying; uncomment optional
-#    features (compliance, packet capture) you want enabled
+#    features (compliance, packet capture) you want enabled, and set
+#    flexVolumePath: None (see below) before creating
 curl -O -L https://downloads.tigera.io/ee/${CALICO_EE_VERSION}/manifests/custom-resources.yaml
 # edit custom-resources.yaml as needed
 kubectl create -f custom-resources.yaml
@@ -319,14 +401,34 @@ kubectl create -f </path/to/license.yaml>
 watch kubectl get tigerastatus
 ```
 
+### `Installation` CR: `flexVolumePath: None`
+
+bootc mounts `/usr` read-only, so the default FlexVolume driver path
+(`/usr/libexec/kubernetes/kubelet-plugins/volume/exec/`) cannot be written
+and `calico-node`'s `flexvol-driver` init container fails, blocking the
+DaemonSet on every node. Disable it in the `Installation` CR inside
+`custom-resources.yaml` before step 4 (MKE does not use FlexVolume):
+
+```yaml
+apiVersion: operator.tigera.io/v1
+kind: Installation
+metadata:
+  name: default
+spec:
+  variant: TigeraSecureEnterprise
+  flexVolumePath: None
+  imagePullSecrets:
+    - name: tigera-pull-secret
+  # ... rest of the shipped CR unchanged
+```
+
 > [!NOTE]
-> Steps 1-4 are the same regardless of whether this is a fresh install or
-> a migration from MKE's baked-in Calico OSS. What differs is what
-> `custom-resources.yaml`'s `Installation` CR should say about the
-> existing `calico-node` DaemonSet MKE already runs, and that is exactly
-> the unconfirmed migration-path question flagged in
-> [Before you begin](#before-you-begin) — do not skip that confirmation
-> because these commands look identical to a fresh install.
+> These steps are the validated **fresh-install** path (MKE deployed
+> `--unmanaged-cni`, no MKE-managed Calico present). For a cluster that
+> already runs MKE's baked-in Calico OSS, what the `Installation` CR must
+> say about the existing `calico-node` DaemonSet is the unconfirmed
+> migration-path question flagged in [Before you begin](#before-you-begin)
+> — do not skip that confirmation because the commands look identical.
 
 ## Verification
 
@@ -344,13 +446,24 @@ watch kubectl get tigerastatus
 
 ## Known gaps
 
-- No live Calico Enterprise install has validated any of the above —
-  see the warning at the top of this document.
+- Validation reached `calico-node` `1/1` on all 12 nodes and
+  `tigerastatus` `apiserver`/`calico`/`ippools`/`tiers` all `Available`
+  (steps 1-4). The license step (5), cross-node pod networking, DNS,
+  NetworkPolicy enforcement and workload traffic under Calico Enterprise
+  have not yet been exercised on this stack.
 - The OSS-to-Enterprise migration path for an MKE-managed (non-operator)
   Calico install is unconfirmed; Tigera's documented upgrade path assumes
   an operator-installed OSS baseline that MKE3 does not use.
-- The Kubernetes version compatibility matrix for MKE 3.9.x against a
-  current Calico Enterprise release has not been checked.
-- `nfnetlink_queue`/`nfnetlink_log` are not yet in a released
-  `bootc-mirantis` image — [bootc-mirantis#210](https://github.com/Mirantis/bootc-mirantis/pull/210)
+- Kubernetes `v1.34.9-mirantis-2` / MKE 3.9.6 with Calico Enterprise
+  `v3.23.2` has not been checked against Tigera's published compatibility
+  matrix; the validation install worked, but that is an observation, not
+  confirmed Tigera support coverage.
+- The six #210 modules (`nfnetlink_queue`, `nfnetlink_log`, `xt_NFQUEUE`,
+  `xt_NFLOG`, `nft_log`, `ip_set_hash_ipport`) are not yet in a released
+  `bootc-mirantis` image —
+  [bootc-mirantis#210](https://github.com/Mirantis/bootc-mirantis/pull/210)
   is open, not merged, as of this writing.
+- `xt_limit` (`-m limit`) fails the same way on this image; Felix does not
+  currently emit it, so it is not preloaded.
+- The Ansible installer has no dedicated variable for `--unmanaged-cni`;
+  it is passed by overriding the whole `mke_install_flags` list.
