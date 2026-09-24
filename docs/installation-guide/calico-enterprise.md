@@ -67,13 +67,13 @@ for the rest of that boot session by any means once it applies — not
 See [Image architecture](image-architecture.md#kernel-modules) for the
 full mechanism.
 
-As of the current `bootc-mirantis` `main`, the image preloads Calico
-Enterprise's `ipip`, IPv6 netfilter, IPVS/SCTP match, logging, L7
-proxy/TPROXY, and bandwidth-QoS modules (added 2026-09-08,
-[PRODENG-3366](https://mirantis.jira.com/browse/PRODENG-3366)). Six
-further modules are in an **open, not-yet-merged** PR
-([bootc-mirantis#210](https://github.com/Mirantis/bootc-mirantis/pull/210),
-[PRODENG-3783](https://mirantis.jira.com/browse/PRODENG-3783)); each was
+As of the current `bootc-mirantis` `main`, the image's boot-time allowlist
+already includes Calico Enterprise's `ipip`, IPv6 netfilter, IPVS/SCTP
+match, logging, L7 proxy/TPROXY, and bandwidth-QoS modules (added
+2026-09-08, [PRODENG-3366](https://mirantis.jira.com/browse/PRODENG-3366)).
+Six further modules that Calico Enterprise needs are present in the image's
+kernel package but **not on that allowlist**
+([PRODENG-3783](https://mirantis.jira.com/browse/PRODENG-3783)); each was
 found by hitting its failure on the validation cluster:
 
 | Module | Failure without it |
@@ -83,8 +83,10 @@ found by hitting its failure on the validation cluster:
 | `ip_set_hash_ipport` | `Failed to complete ipset restore` for the per-service `hash:ip,port` ipsets |
 | `nft_log` | `RULE_APPEND failed (No such file or directory)` on every `-j NFLOG` flow-log rule; Felix panics after ~10 retries and `calico-node` crash-loops, `calico-apiserver` with it. iptables-nft emits NFLOG as the native nftables `log` expression, so `xt_NFLOG` alone is not enough; flow logs are always-on in Calico Enterprise (`FELIX_FLOWLOGSFILEENABLED=true` is hard-coded by the operator) and cannot be turned off via `FelixConfiguration` |
 
-Until #210 merges and you're on an image built after it, add them yourself
-at provision time using the same extension point.
+Add them at provision time using the extension point below. Whether the
+image's own allowlist should grow to include them is tracked on
+PRODENG-3783; the recipes here work on today's images and stay correct if
+it does.
 
 Full list to preload (safe to preload all of it regardless of which
 encapsulation mode or optional features you use — an unused loaded module
@@ -124,7 +126,7 @@ sch_htb
 ```
 
 > [!NOTE]
-> Once you're on an image that already ships the six #210 modules, the two
+> Should a future image ship these six modules on its own allowlist, the two
 > provision-time recipes below become a no-op — both are written to be safe
 > to leave in place permanently rather than removed once the image catches
 > up. Verify with `lsmod` either way (see [Verification](#verification)).
@@ -557,11 +559,11 @@ nodes):
   `v3.23.2` has not been checked against Tigera's published compatibility
   matrix; the validation install worked, but that is an observation, not
   confirmed Tigera support coverage.
-- The six #210 modules (`nfnetlink_queue`, `nfnetlink_log`, `xt_NFQUEUE`,
-  `xt_NFLOG`, `nft_log`, `ip_set_hash_ipport`) are not yet in a released
-  `bootc-mirantis` image —
-  [bootc-mirantis#210](https://github.com/Mirantis/bootc-mirantis/pull/210)
-  is open, not merged, as of this writing.
+- The six PRODENG-3783 modules (`nfnetlink_queue`, `nfnetlink_log`,
+  `xt_NFQUEUE`, `xt_NFLOG`, `nft_log`, `ip_set_hash_ipport`) are not on
+  the allowlist of any released `bootc-mirantis` image; provision-time
+  preload is the only path today. Whether to add them to the image is an
+  open decision on PRODENG-3783.
 - `xt_limit` (`-m limit`) fails the same way on this image; Felix does not
   currently emit it, so it is not preloaded.
 - The Ansible installer has no dedicated variable for `--unmanaged-cni`;
