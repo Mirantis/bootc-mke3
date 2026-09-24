@@ -312,53 +312,13 @@ ansible-playbook -i inventory.ini mke-install-playbook.yml -e @calico-ee-overrid
 > `mke install` fail with `TigopCompatibleManifest is unexpectedly false`.
 > The validated install used no `mke_config_src` TOML at all.
 
-Until step 3 completes, every node is `NotReady` (taint
+Until the Tigera install in section 3 completes, every node is `NotReady` (taint
 `node.kubernetes.io/not-ready`) and no pod-network pods schedule; that is
 expected, not a failure. Confirm MKE deployed no CNI:
 
 ```sh
 kubectl get ds -n kube-system calico-node   # expect: NotFound
 ```
-
-### MKE privileged-attributes grant for the Tigera service accounts
-
-MKE's admission controller refuses pods that request `hostNetwork`,
-`hostPath` mounts, `hostPID` or `privileged` unless the pod's
-ServiceAccount is on the cluster-config allowlist — and the Tigera operator
-creates such pods (`calico-node`, `calico-typha`, `calico-apiserver`,
-`csi-node-driver`) under its own ServiceAccounts, not as an MKE admin. On the
-validation cluster the operator stalled at the first two with:
-
-```
-deployments.apps "calico-typha" is forbidden: non-admin user "tigera-operator:tigera-operator"
-[service account "calico-system:calico-typha"]. The configured privileged attributes access
-... for service accounts ("[hostbindmounts hostipc hostnetwork hostpid kernelcapabilities
-privileged]")("[system-upgrade:system-upgrade]") lack required permissions to use attributes
-[hostnetwork] for resource calico-typha
-```
-
-Before step 3, append the five `calico-system` ServiceAccounts to
-`priv_attributes_service_accounts` in the MKE cluster-config TOML, following
-the download / edit / upload procedure in
-[Run privileged support containers on MKE](../operations-guide/privileged-support-containers.md#2-grant-the-privilege-attributes)
-— **preserving** the `system-upgrade:system-upgrade` entry a default install
-already carries:
-
-```toml
-[cluster_config]
-  priv_attributes_allowed_for_service_accounts = ["hostIPC", "hostNetwork", "hostPID", "hostBindMounts", "privileged", "kernelCapabilities"]
-  priv_attributes_service_accounts = ["system-upgrade:system-upgrade", "calico-system:calico-node", "calico-system:calico-typha", "calico-system:calico-kube-controllers", "calico-system:calico-apiserver", "calico-system:csi-node-driver"]
-```
-
-`ansible/tasks/helpers/suc_priv_grant.py <downloaded.toml> <namespace:sa>`
-performs the same merge for one entry at a time and can be run once per
-ServiceAccount on the downloaded file before uploading it. The grant takes
-effect on the next admission decision; if the operator already hit the
-error it retries on its own within about a minute. If you later enable
-further Tigera components (compliance, intrusion detection, packet capture,
-egress gateways), watch `kubectl get tigerastatus` for the same `forbidden`
-message and add the ServiceAccount it names.
-
 
 ### CNI interfaces unmanaged by NetworkManager
 
@@ -413,29 +373,99 @@ image — no action needed here.
 
 ## 3. Install Calico Enterprise components
 
-Once the checks above pass, run Tigera's own operator-based installer.
-Set `$CALICO_EE_VERSION` to the release your license entitles you to
-(Tigera support case 00010382 was raised against 3.22; 3.23.x is current
-at the time of writing — do not assume either applies to your
-entitlement).
+Once the checks above pass, grant the Tigera ServiceAccounts the MKE
+privileges they need (step 1), then run Tigera's own operator-based
+installer (steps 2-6). Set `$CALICO_EE_VERSION` to the release your license
+entitles you to (Tigera support case 00010382 was raised against 3.22;
+3.23.x is current at the time of writing — do not assume either applies to
+your entitlement).
+
+### Step 1: grant MKE privileged attributes to the Tigera ServiceAccounts
+
+MKE's admission controller refuses pods that request `hostNetwork`,
+`hostPath` mounts, `hostPID` or `privileged` unless the pod's
+ServiceAccount is on the cluster-config allowlist — and the Tigera operator
+creates such pods (`calico-node`, `calico-typha`, `calico-apiserver`,
+`csi-node-driver`) under its own ServiceAccounts, not as an MKE admin.
+Without this step the operator stalls at the first two with:
+
+```
+deployments.apps "calico-typha" is forbidden: non-admin user "tigera-operator:tigera-operator"
+[service account "calico-system:calico-typha"]. The configured privileged attributes access
+... for service accounts ("[hostbindmounts hostipc hostnetwork hostpid kernelcapabilities
+privileged]")("[system-upgrade:system-upgrade]") lack required permissions to use attributes
+[hostnetwork] for resource calico-typha
+```
+
+The allowlist lives in the MKE cluster configuration TOML, reachable only
+through the `/api/ucp/config-toml` API (the same procedure as
+[Run privileged support containers on MKE](../operations-guide/privileged-support-containers.md#2-grant-the-privilege-attributes)).
+Download it, add the ServiceAccounts, upload it back:
+
+```sh
+export MKE_URL=<mke_url from your inventory, no scheme>
+export MKE_USER=admin
+export MKE_PASS=<admin password>
+
+# 1a. Authenticate -- returns a bearer token
+TOKEN=$(curl -sk -X POST "https://${MKE_URL}/auth/login" \
+  -H "Content-Type: application/json" \
+  -d "{\"username\":\"${MKE_USER}\",\"password\":\"${MKE_PASS}\"}" | jq -r .auth_token)
+
+# 1b. Download the current cluster config
+curl -sk -H "Authorization: Bearer ${TOKEN}" \
+  -o mke-config.toml "https://${MKE_URL}/api/ucp/config-toml"
+```
+
+Edit `mke-config.toml`. In the `[cluster_config]` section, make both keys
+below read as shown, creating either key if absent and **preserving any
+entries already present** — a default `bootc-mke3` install already carries
+`system-upgrade:system-upgrade` for the System Upgrade Controller, and
+overwriting the array revokes that grant:
+
+```toml
+[cluster_config]
+  priv_attributes_allowed_for_service_accounts = ["hostIPC", "hostNetwork", "hostPID", "hostBindMounts", "privileged", "kernelCapabilities"]
+  priv_attributes_service_accounts = ["system-upgrade:system-upgrade", "calico-system:calico-node", "calico-system:calico-typha", "calico-system:calico-kube-controllers", "calico-system:calico-apiserver", "calico-system:csi-node-driver"]
+```
+
+```sh
+# 1c. Upload the modified cluster config
+curl -sk -X PUT -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: application/toml" \
+  --data-binary @mke-config.toml "https://${MKE_URL}/api/ucp/config-toml"
+rm -f mke-config.toml
+```
+
+A `200` means the grant is live; it takes effect on the next admission
+decision with no MKE restart. If the operator has already hit the error it
+retries on its own within about a minute. If you later enable further
+Tigera components (compliance, intrusion detection, packet capture, egress
+gateways), watch `kubectl get tigerastatus` for the same `forbidden`
+message and add the ServiceAccount it names the same way.
+
+> Use `-k`/`--insecure` only while MKE still serves its self-signed
+> certificate; drop it once MKE has a trusted certificate installed.
+
+### Steps 2-6: Tigera operator install
 
 ```sh
 CALICO_EE_VERSION=v3.23.2   # confirm against your Tigera entitlement
 
-# 1. Operator and CRDs
+# 2. Operator and CRDs
 kubectl create -f https://downloads.tigera.io/ee/${CALICO_EE_VERSION}/manifests/operator-crds.yaml
 kubectl create -f https://downloads.tigera.io/ee/${CALICO_EE_VERSION}/manifests/tigera-operator.yaml
 
-# 2. Prometheus operator (skip if you already run one >= v0.40.0)
+# 3. Prometheus operator (skip if you already run one >= v0.40.0)
 kubectl create -f https://downloads.tigera.io/ee/${CALICO_EE_VERSION}/manifests/tigera-prometheus-operator.yaml
 
-# 3. Registry pull secret -- from your Tigera support representative,
+# 4. Registry pull secret -- from your Tigera support representative,
 #    or your own private-registry mirror credentials
 kubectl create secret generic tigera-pull-secret \
   --type=kubernetes.io/dockerconfigjson -n tigera-operator \
   --from-file=.dockerconfigjson=<path/to/pull-secret.json>
 
-# 4. Custom resources -- trim to what this stack can run (see below), set
+# 5. Custom resources -- trim to what this stack can run (see below), set
 #    flexVolumePath: None, then create
 curl -O -L https://downloads.tigera.io/ee/${CALICO_EE_VERSION}/manifests/custom-resources.yaml
 # edit custom-resources.yaml as described in the next two subsections
@@ -448,7 +478,7 @@ watch kubectl get tigerastatus
 Wait until `apiserver` reports `Available` before continuing.
 
 ```sh
-# 5. License
+# 6. License
 kubectl create -f </path/to/license.yaml>
 watch kubectl get tigerastatus
 ```
@@ -464,7 +494,7 @@ has none (`kubectl get sc` → `No resources found`), and `Manager`,
 it. Without storage, keep **`Installation`, `APIServer` and `Monitor`** and
 delete the rest — that is what the validation run applied. Keep `Monitor`
 even though it looks optional: the Tigera operator creates the RBAC for the
-`tigera-prometheus-operator` deployed in step 2 only when a `Monitor` CR
+`tigera-prometheus-operator` deployed in step 3 only when a `Monitor` CR
 exists, and without it that operator crash-loops with `no controller can be
 started, check the RBAC permissions of the service account`.
 
@@ -474,7 +504,7 @@ bootc mounts `/usr` read-only, so the default FlexVolume driver path
 (`/usr/libexec/kubernetes/kubelet-plugins/volume/exec/`) cannot be written
 and `calico-node`'s `flexvol-driver` init container fails, blocking the
 DaemonSet on every node. Disable it in the `Installation` CR inside
-`custom-resources.yaml` before step 4 (MKE does not use FlexVolume):
+`custom-resources.yaml` before step 5 (MKE does not use FlexVolume):
 
 ```yaml
 apiVersion: operator.tigera.io/v1
@@ -552,15 +582,15 @@ nodes):
 
 ## Known gaps
 
-- Validation covered steps 1-5 plus the dataplane checks above on 12
+- Validation covered sections 1-3 plus the dataplane checks above on 12
   nodes. Flow-log, L7-log and Prometheus file/metrics output could not be
   verified: the only license available had expired (see
   [License state](#license-state-gates-several-features-silently)).
   `LogStorage`, `Manager`, `IntrusionDetection`, `LogCollector` and
   `PolicyRecommendation` were not applied (no StorageClass).
 - The Ansible installer has no task for the Tigera privileged-attributes
-  grant; it is done by hand (or with `suc_priv_grant.py`) between the MKE
-  install and step 3.
+  grant; it is a manual TOML round-trip (section 3, step 1) between the MKE
+  install and the Tigera operator install.
 - The OSS-to-Enterprise migration path for an MKE-managed (non-operator)
   Calico install is unconfirmed; Tigera's documented upgrade path assumes
   an operator-installed OSS baseline that MKE3 does not use.
