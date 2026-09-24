@@ -598,11 +598,4 @@ nodes):
   `v3.23.2` has not been checked against Tigera's published compatibility
   matrix; the validation install worked, but that is an observation, not
   confirmed Tigera support coverage.
-- The eight additional modules (`nfnetlink_queue`, `nfnetlink_log`,
-  `xt_NFQUEUE`, `xt_NFLOG`, `nft_log`, `ip_set_hash_ipport`, `xt_limit`,
-  `nft_limit`) are not on
-  the allowlist of any released bootc build; the
-  [Adding modules](image-architecture.md#adding-modules) drop-in is the
-  only path today. Whether to add them to the image is an open decision.
-- The Ansible installer has no dedicated variable for `--unmanaged-cni`;
-  it is passed by overriding the whole `mke_install_flags` list.
+
