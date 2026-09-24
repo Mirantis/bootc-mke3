@@ -65,7 +65,7 @@ for the rest of that boot session by any means once it applies — not
 See [Image architecture](image-architecture.md#kernel-modules) for the
 full mechanism.
 
-As of the current `bootc-mirantis` `main`, the image's boot-time allowlist
+As of current bootc builds, the image's boot-time allowlist
 already includes Calico Enterprise's `ipip`, IPv6 netfilter, IPVS/SCTP
 match, logging, L7 proxy/TPROXY, and bandwidth-QoS modules (added
 2026-09-08). Six further modules that Calico Enterprise needs are present in
@@ -401,8 +401,8 @@ runcmd:
 
 ### `calico-selinux`
 
-The image already installs Tigera's `calico-selinux` RPM
-(`bootc/mke3/Containerfile-template`) — no action needed here.
+The bootc build already installs Tigera's `calico-selinux` RPM into the
+image — no action needed here.
 
 ## 3. Install Calico Enterprise components
 
@@ -563,7 +563,7 @@ nodes):
   confirmed Tigera support coverage.
 - The six additional modules (`nfnetlink_queue`, `nfnetlink_log`,
   `xt_NFQUEUE`, `xt_NFLOG`, `nft_log`, `ip_set_hash_ipport`) are not on
-  the allowlist of any released `bootc-mirantis` image; the
+  the allowlist of any released bootc build; the
   [Adding modules](image-architecture.md#adding-modules) drop-in is the
   only path today. Whether to add them to the image is an open decision.
 - `xt_limit` (`-m limit`) fails the same way on this image; Felix does not
