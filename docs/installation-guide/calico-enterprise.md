@@ -579,6 +579,15 @@ nodes):
   egress rule (TCP 80 to the backend and UDP 53) restores exactly that
   path, while a third pod with the egress allow but no ingress allow on the
   backend stays blocked.
+- Host-networked traffic: with the deny-all in place, kubelet's
+  readiness probes from each node to its own pods keep passing (all
+  backends stay `Ready` — Calico exempts the local host's traffic to its own
+  workloads), while a `hostNetwork: true` pod on a *different* node is
+  blocked from both the backend pod IP and the ClusterIP and gets `200`
+  from both once the policies are removed — host-sourced traffic from other
+  nodes is ordinary policed ingress. `calico-node` and `calico-typha` are
+  themselves hostNetwork pods, so Typha fan-out to all 12 nodes is also
+  evidence for this path.
 
 ## Known gaps
 
