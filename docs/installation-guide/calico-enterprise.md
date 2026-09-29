@@ -602,6 +602,40 @@ even though it looks optional: the Tigera operator creates the RBAC for the
 exists, and without it that operator crash-loops with `no controller can be
 started, check the RBAC permissions of the service account`.
 
+### If you do provide storage
+
+Standing up a `StorageClass` so `LogStorage`/`Manager`/`IntrusionDetection`/
+`LogCollector`/`PolicyRecommendation` can be applied surfaces two further
+MKE-specific gates, neither of which is a Calico Enterprise defect — both
+are MKE's own admission/authorization model, and neither is mentioned
+above because the validated run in this doc never applied those CRs.
+Verified live with a community `local-path-provisioner` (rancher.io/local-path)
+as the `StorageClass`, `bootc-mke3` image `r9.8-mcr29.6.1.1-mke3.9.6-cloud-20260928-85`:
+
+1. **The provisioner's helper pod needs its own privileged-attributes
+   grant.** Its `create`d helper pods use `hostBindMounts` to write to the
+   node's local path, which MKE's admission controller blocks the same way
+   it blocks the Tigera ServiceAccounts in
+   [step 1](#step-1-grant-mke-privileged-attributes-to-the-tigera-serviceaccounts)
+   above — add the provisioner's ServiceAccount (e.g.
+   `local-path-storage:local-path-provisioner-service-account`) to that
+   same `priv_attributes_service_accounts` list. `tigera-fluentd:fluentd-node`
+   needs the identical grant once `LogCollector` is applied — its
+   `fluentd-node` DaemonSet also touches `hostBindMounts` for the node-local
+   log files.
+2. **MKE restricts creating `local`-storage-class `PersistentVolume` objects
+   to admin-equivalent identities**, independent of the ServiceAccount's own
+   Kubernetes RBAC (see
+   [Access control model](https://docs.mirantis.com/mke/3.3/ops/authorize-rolebased-access/access-control-model.html)).
+   A provisioner's own `ClusterRole`/`ClusterRoleBinding` (as shipped by
+   `local-path-provisioner`'s manifest) is not sufficient by itself; dynamic
+   provisioning only started succeeding once its ServiceAccount was also
+   bound the built-in `cluster-admin` `ClusterRole`. Binding `cluster-admin`
+   to a third-party provisioner's ServiceAccount is a real security
+   trade-off, not a routine step — weigh it against the alternative of an
+   admin manually pre-provisioning each `PersistentVolume` `LogStorage`
+   needs.
+
 ### `Installation` CR: `flexVolumePath: None`
 
 bootc mounts `/usr` read-only, so the default FlexVolume driver path
