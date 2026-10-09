@@ -18,7 +18,7 @@ These controls exist in the Ansible tooling already; confirm they are enabled fo
 | Variable | Recommended | Effect |
 |---|---|---|
 | `revoke_sudo_after_install` | `true` | Removes the Ansible connecting user from `wheel`/`sudo` and scrubs `/etc/sudoers.d/` after install — no standing sudo path remains. |
-| `disable_sshd_after_install` | `true` | Stops and disables `sshd` on every node — closes remote shell access once provisioning is done. |
+| `disable_sshd_after_install` | `true` | Stops and masks `sshd` on every node — closes remote shell access once provisioning is done, and survives reboots (a merely-disabled unit is restarted by `cloud-init.service`'s `Wants=sshd.service`). |
 | `disable_firewalld` | `false` | Keeps per-service firewalld rules (`tasks/mke-open-ports-tasks.yml`) instead of opening the host to all traffic; only disable if a perimeter firewall already restricts equivalent ports. |
 
 If SSH/console access is needed later (e.g. to run `bootc rollback` manually per the [upgrade runbook](upgrade-with-ansible.md#upgrade-rollback)), re-enable it deliberately and revoke it again afterward — do not leave it disabled from install-time policy alone as the only control.

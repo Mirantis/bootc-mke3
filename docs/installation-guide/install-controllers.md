@@ -145,6 +145,7 @@ bundle's kubeconfig — no SSH to the node required:
 ```sh
 export KUBECONFIG=<bundle>/kube.yml
 kubectl debug node/<node-name> --image=busybox -- chroot /host /bin/sh -c '
+  systemctl unmask sshd
   systemctl enable --now sshd
   usermod -aG wheel <ansible-user>
   install -d -m 0700 /etc/sudoers.d
@@ -156,7 +157,9 @@ kubectl debug node/<node-name> --image=busybox -- chroot /host /bin/sh -c '
 `kubectl debug node/<node>` schedules a privileged pod on the target node
 and tolerates the node's own readiness taints automatically, so it works
 even against a node `kubectl` doesn't consider healthy. `chroot /host` gives
-the debug pod's shell the node's real root filesystem. Restoring wheel-group
+the debug pod's shell the node's real root filesystem. `unmask` is required
+first: the hardening play masks `sshd` (links the unit to `/dev/null`), and
+`enable`/`start` on a masked unit fails. Restoring wheel-group
 membership alone is not sufficient — Rocky's default `%wheel` sudoers line
 still prompts for a password — so the NOPASSWD drop-in above is required to
 get non-interactive sudo back. Repeat for each locked-out node.

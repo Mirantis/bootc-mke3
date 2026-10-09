@@ -86,7 +86,9 @@ mke_external_key_src: ""
 main_manager: "{{ groups['managers'][0] }}"
 
 
-# When true, sshd is stopped and disabled on every host at the end of the operation.
+# When true, sshd is stopped and masked on every host at the end of the operation
+# (masked, not disabled: cloud-init.service Wants=sshd.service would restart a
+# merely-disabled unit on the next boot).
 # Set to true only in environments where SSH access must be revoked post-install.
 disable_sshd_after_install: true
 
