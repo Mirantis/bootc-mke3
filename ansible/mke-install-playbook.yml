@@ -70,7 +70,7 @@
       # Running as a single shell task means the process is already root — removing
       # the user from wheel/sudo does not affect the running elevated shell.
       #
-      # mask, not disable (PRODENG-3859): on cloud images cloud-init.service
+      # mask, not disable: on cloud images cloud-init.service
       # carries Wants=sshd.service, which starts a disabled unit on every boot,
       # so `disable --now` only held until the first reboot. A masked unit
       # cannot be pulled in by Wants=.

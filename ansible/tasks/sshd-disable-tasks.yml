@@ -1,4 +1,4 @@
-# mask, not disable (PRODENG-3859): on cloud images cloud-init.service carries
+# mask, not disable: on cloud images cloud-init.service carries
 # Wants=sshd.service, which starts a disabled unit on every boot, so a plain
 # stop+disable only held until the first reboot. A masked unit cannot be
 # pulled in by Wants=. Recovery: systemctl unmask sshd (see
