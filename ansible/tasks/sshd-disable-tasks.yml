@@ -1,6 +1,11 @@
-- name: Disable and stop sshd
+# mask, not disable (PRODENG-3859): on cloud images cloud-init.service carries
+# Wants=sshd.service, which starts a disabled unit on every boot, so a plain
+# stop+disable only held until the first reboot. A masked unit cannot be
+# pulled in by Wants=. Recovery: systemctl unmask sshd (see
+# docs/installation-guide/install-controllers.md, break-glass recovery).
+- name: Mask and stop sshd
   ansible.builtin.systemd:
     name: sshd
     state: stopped
-    enabled: false
+    masked: true
   become: true

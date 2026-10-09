@@ -49,8 +49,11 @@ each one does, where their versions come from, and how to verify them.
 
 The same run additionally applies `disable_sshd_after_install` and
 `revoke_sudo_after_install` (`vars/common-vars.yml`), both `true` by
-default: sshd is stopped and disabled, and the ansible user's sudo access
-(wheel group, sudo group, and any named `/etc/sudoers.d/<user>` drop-in) is
+default: sshd is stopped and masked (not merely disabled — on cloud images
+`cloud-init.service` pulls a disabled `sshd` back in on every boot via
+`Wants=sshd.service`, so only a mask survives reboots), and the ansible
+user's sudo access (wheel group, sudo group, and any named
+`/etc/sudoers.d/<user>` drop-in) is
 revoked, on every host, in the "Harden hosts after MKE installation" play —
 which runs *before* the post-install controller installs (SUC,
 `cluster-upgrade-controller`, `machine-config-controller`), not after them,

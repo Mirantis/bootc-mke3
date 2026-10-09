@@ -63,19 +63,24 @@
   vars_files:
     - vars/common-vars.yml
   tasks:
-    - name: Revoke ansible user sudo privileges and disable sshd
+    - name: Revoke ansible user sudo privileges and mask sshd
       # Both operations must execute inside a single sudo escalation.
       # Revoking sudo first would invalidate the subsequent become: true needed
       # for sshd; stopping sshd first drops SSH before revocation can run.
       # Running as a single shell task means the process is already root — removing
       # the user from wheel/sudo does not affect the running elevated shell.
+      #
+      # mask, not disable (PRODENG-3859): on cloud images cloud-init.service
+      # carries Wants=sshd.service, which starts a disabled unit on every boot,
+      # so `disable --now` only held until the first reboot. A masked unit
+      # cannot be pulled in by Wants=.
       ansible.builtin.shell: |
         gpasswd -d {{ ansible_user }} wheel 2>/dev/null || true
         gpasswd -d {{ ansible_user }} sudo  2>/dev/null || true
         sed -i '/^{{ ansible_user }}[[:space:]]/d' /etc/sudoers
         find /etc/sudoers.d/ -maxdepth 1 -type f \
           -exec sed -i '/^{{ ansible_user }}[[:space:]]/d' {} \;
-        systemctl disable --now sshd
+        systemctl mask --now sshd
       become: true
       changed_when: false
       when: revoke_sudo_after_install | bool and disable_sshd_after_install | bool
