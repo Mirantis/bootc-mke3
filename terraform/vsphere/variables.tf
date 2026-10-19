@@ -10,6 +10,12 @@ variable "vsphere_password" {
   description = "Password for vSphere connection"
 }
 
+variable "allow_unverified_ssl" {
+  description = "Skip TLS certificate verification of the vSphere server. Set to true only for servers with a self-signed certificate."
+  type        = bool
+  default     = false
+}
+
 variable "datacenter" {
   default = ""
 }
