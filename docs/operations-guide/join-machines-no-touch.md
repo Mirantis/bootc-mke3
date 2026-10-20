@@ -74,34 +74,20 @@ builds are primarily used for internal testing; QCOW2 is publicly
 announced/downloadable. systemd credentials work on either, where the
 infrastructure can deliver them.
 
-Node-local gaps must be handled in the same provisioning payload, whichever
-delivery path you use. The firewall is one on every image; kernel module
-preloading is another on older images (see the F.A.Q):
-
-- **Firewall.** A fresh machine's own firewalld (active by default) ships
-  only the `ssh`, `cockpit`, and `dhcpv6-client` services — none of the
-  cluster ports. The swarm join itself still succeeds (it's outbound-only),
-  but the node is then unreachable for inbound gossip/overlay traffic until
-  the firewall is opened. This is unrelated to the cluster's
-  `disable_firewalld` Ansible variable (default `false` — Ansible-managed
-  nodes keep firewalld on and get per-service rules from
-  `tasks/mke-open-ports-tasks.yml`): a no-touch-joined worker is never
-  touched by the Ansible installer at all, so that variable's value
-  elsewhere is irrelevant here — the node keeps the OS image's raw
-  firewalld defaults until the provisioning payload configures it directly.
-  Use the same zones/services `mke-open-ports-tasks.yml` applies to a
-  worker (`public` zone for `mke_worker_internal`, `trusted` zone plus a
-  trusted loopback interface for `mke_worker_self`), so the node ends up
-  firewall-equivalent to one Ansible actually installed. The
-  `firewall-cmd --permanent` + `--reload` pair takes effect immediately; no
-  reboot is needed.
+The payload may need to carry more than the credential — firewall rules,
+kernel module preloading, and hardening are all applied by whoever
+provisions the machine, not by the join. See [What else should the
+provisioning payload
+include?](#what-else-should-the-provisioning-payload-include) before
+copying an example below.
 
 #### Bare metal (kickstart — the standard path; file shredded after join)
 
-Append to the kickstart `%post`: the credential file, the firewalld
-services (correct zones), the `xt_statistic` preload and the
-sentinel-gated reboot unit (see [Do the examples need the `xt_statistic`
-preload and the reboot unit?](#do-the-examples-need-the-xt_statistic-preload-and-the-reboot-unit)):
+Append to the kickstart `%post`: the credential file, plus the optional
+items from [What else should the provisioning payload
+include?](#what-else-should-the-provisioning-payload-include) — here the
+firewalld services (correct zones), the `xt_statistic` preload and the
+sentinel-gated reboot unit:
 
 ```
 %post --erroronfail
@@ -339,45 +325,54 @@ Notes:
 - Recovery, from the console or a
   [node debug shell](node-debug-shell.md): `systemctl unmask sshd`.
 
-### Do the examples need the `xt_statistic` preload and the reboot unit?
+### What else should the provisioning payload include?
 
-Not on an image built from current `bootc-mirantis` `main`. The examples
-keep both because they cost nothing there and cover older images.
+The no-touch join adds the machine to the cluster and changes nothing else
+about it. Anything else the machine needs is applied by whatever provisions
+it, in the same kickstart `%post` or cloud-init configuration that carries
+the join credential.
 
-Baked-in host hardening sets `kernel.modules_disabled=1`, which blocks
-loading the `xt_statistic` kernel module on any node whose kube-proxy starts
-*after* that lockdown sysctl has applied — which used to be every node
-except whichever one won the boot-time race during the initial cluster
-stand-up. On a current image `xt_statistic` is preloaded via
-`dracut-mke-modules.conf`/`mke-modules.conf` and is present on **first
-boot**, before the lockdown sysctl applies, on every node including
-no-touch-joined workers — confirmed with zero `calico-node` restarts across
-managers, Ansible-joined workers and no-touch-joined workers on the same
-image.
+**Firewall rules.** A fresh machine's firewalld is active by default and
+ships only the `ssh`, `cockpit` and `dhcpv6-client` services — none of the
+cluster ports. The join itself still succeeds, being outbound-only, but the
+machine is unreachable for inbound gossip and overlay traffic until the
+firewall is opened. Two options:
 
-On an **older** image the symptom is calico-node's `install-cni` init
-container in `CrashLoopBackOff`, with kube-proxy logging `iptables-restore:
-Couldn't load match 'statistic'`. The fix is to preload the module via
-`/etc/modules-load.d/xt_statistic.conf` (content: the single line
-`xt_statistic`). `systemd-modules-load.service` is ordered
+- Open the cluster ports, using the same zones and services a worker gets
+  from the installer's `tasks/mke-open-ports-tasks.yml` — `public` zone for
+  `mke_worker_internal`, `trusted` zone plus a trusted loopback interface
+  for `mke_worker_self`. `firewall-cmd --permanent` followed by
+  `firewall-cmd --reload` takes effect immediately; no reboot.
+- Disable firewalld, where a perimeter firewall already restricts the
+  equivalent ports. This is the no-touch equivalent of the installer's
+  `disable_firewalld` variable. That variable's value for the cluster has no
+  effect here — the installer never runs on this machine.
+
+Opening the [full post-join port set](#port-requirements), not just the
+join-minimum rows, avoids a second pass once the machine is carrying
+workloads.
+
+**Kernel module preloading.** Current images set
+`kernel.modules_disabled = 0` (`bootc/mke3/static/secure-kernel-params.conf`),
+so modules load on demand and no preloading is required. A configuration
+that re-enables the lockdown (`kernel.modules_disabled = 1`) blocks every
+`modprobe` issued after the sysctl applies, including kube-proxy's load of
+`xt_statistic`; the symptom is calico-node's `install-cni` init container in
+`CrashLoopBackOff` with kube-proxy logging `iptables-restore: Couldn't load
+match 'statistic'`.
+
+Under that configuration, list the module in `/etc/modules-load.d/` — for
+example `/etc/modules-load.d/xt_statistic.conf` containing the single line
+`xt_statistic`. `systemd-modules-load.service` is ordered
 `Before=systemd-sysctl.service`, so a module listed there loads before the
-lockdown sysctl applies — but only on the *next* boot, so an already-running
-no-touch-joined worker needs a self-triggered reboot. The reboot unit in the
-examples is gated on the join sentinel (`/var/lib/mke3/joined`, see
-[no-touch join](no-touch-join.md)) so it cannot race the join itself.
+lockdown applies, but only from the *next* boot, so a machine that has
+already joined needs a reboot for it to take effect. The payload examples
+include a reboot unit gated on the join sentinel (`/var/lib/mke3/joined`) so
+it cannot race the join, and on an `lsmod` check so it is skipped when the
+module is already present. Keep the check: rebooting a joined machine
+needlessly restarts `calico-node` and produces a transient `docker node ls`
+"Down" reading.
 
-The examples check for the module before rebooting, so on a current image
-the reboot is skipped entirely. The check is necessary: on an image where
-the module is already preloaded, unconditionally rebooting every joined
-worker restarts `calico-node` for no reason and produces a transient
-`docker node ls` "Down" reading right after each join. It self-resolves, but
-it is disruptive and misleading. Keep the check even with a fleet on current
-images — it guards against an older image joining the mix.
-
-### Does loading any other kernel module need the same treatment?
-
-Yes. `kernel.modules_disabled=1` blocks every late `modprobe`, not just
-`xt_statistic`. A module a workload needs must be listed in
-`/etc/modules-load.d/` by the provisioning payload and be loaded before the
-lockdown sysctl applies, which means it is in force from the next boot
-onward, not from the moment the file is written.
+**Hardening.** See [Does the joined machine end up hardened (sshd masked,
+sudo
+revoked)?](#does-the-joined-machine-end-up-hardened-sshd-masked-sudo-revoked)
