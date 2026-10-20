@@ -312,8 +312,14 @@ sudo systemctl status swarm-join.service
 
 ### Can this join managers?
 
-No. The no-touch mechanism joins **workers only**. Managers are added via the
-Ansible installer.
+No — the mechanism joins **workers only**. After the initial install, a new
+manager is added by no-touch-joining the machine as a worker and then
+promoting it with `docker node promote` from an MKE client bundle, which
+needs no SSH to the machine: see [Promote or demote a
+machine](promote-demote-machine.md). Promote only once the machine reports
+`Ready`, and note the fault-tolerance window that runbook describes while
+manager count is even. The Ansible installer joins managers at install time
+only.
 
 ### Does this replace the Ansible worker join?
 
