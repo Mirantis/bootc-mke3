@@ -81,11 +81,27 @@ kubectl get pods -A --field-selector=status.phase!=Running,status.phase!=Succeed
 Investigate anything listed. A pod already `Pending` for lack of capacity
 will not schedule any better while nodes are being drained in sequence.
 
-**cluster-upgrade-controller.** Deployment available, CRD present:
+**Custom resource definitions.** Both CRDs the upgrade uses must be present
+and `Established`, and must serve the API versions the CR and the controller
+use:
+
+```sh
+kubectl get crd clusterupgrades.upgrade.mirantis.com plans.upgrade.cattle.io \
+  -o custom-columns=\
+'NAME:.metadata.name,ESTABLISHED:.status.conditions[?(@.type=="Established")].status,VERSIONS:.spec.versions[*].name'
+```
+
+Both rows must read `True`, and `clusterupgrades.upgrade.mirantis.com` must
+list the `apiVersion` used by the CR in step 3 (`v1alpha1`). A missing CRD
+means the relevant controller was never installed or was removed —
+`kubectl apply -f` of the CR would fail with `no matches for kind`.
+`Established=False` means the API server has not yet accepted the definition;
+re-check before proceeding.
+
+**cluster-upgrade-controller.** Deployment available:
 
 ```sh
 kubectl -n mke get deploy cluster-upgrade-controller
-kubectl get crd clusterupgrades.upgrade.mirantis.com
 ```
 
 `READY` must read `1/1`. A `CrashLoopBackOff` or repeatedly restarting pod
@@ -108,11 +124,10 @@ the upgrade cannot proceed without it:
 
 ```sh
 kubectl -n system-upgrade get deploy system-upgrade-controller
-kubectl get crd plans.upgrade.cattle.io
 kubectl -n system-upgrade get plans,jobs,pods
 ```
 
-The deployment must read `1/1` and the CRD must exist. The third command
+The deployment must read `1/1`. The second command
 should show no leftover `Plan`, and no `Job` or pod from a previous upgrade
 still running or in error — SUC's own TTL
 (`SYSTEM_UPGRADE_JOB_TTL_SECONDS_AFTER_FINISH`, 900s) removes completed jobs,
