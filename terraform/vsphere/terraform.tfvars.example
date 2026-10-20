@@ -9,6 +9,10 @@ vsphere_user = "<username>"
 # vSphere username password
 vsphere_password = "<password>"
 
+# Verify the vSphere TLS certificate (default false = verify). Uncomment and set
+# to true only if vSphere uses a self-signed certificate.
+# allow_unverified_ssl = true
+
 # vSphere resources
 # Paths to most of the resources can be obtained by using govc tool (https://github.com/vmware/govmomi/blob/main/govc/README.md)
 ######################

@@ -59,6 +59,8 @@ In order to authenticate, you need to use user credentials that can operate vSph
 
 `vsphere_user` and `vsphere_password` are used to authenticate to the vSphere and perform operations. Variables file (`terraform.tfvars`) is gitignored, so any sensitive data won't be exposed by mistake.
 
+`allow_unverified_ssl` defaults to `false`, so the vSphere server certificate is verified. If your vSphere uses a self-signed certificate, set `allow_unverified_ssl = true` in `terraform.tfvars` (not recommended outside lab environments).
+
 #### vSphere resources
 
 Next, you need to specify different resources that will be used for VM placement and provisioning.
@@ -114,6 +116,8 @@ Few things that need to be mentioned:
 2. Prepare TF: `terraform init`
 3. Run TF: `terraform apply`
 4. To get Ansible inventory, run: `terraform output -raw ansible_inventory`
+
+Terraform state is local (`terraform/vsphere/terraform.tfstate`, gitignored). It contains the vSphere password in plain text, so keep it private. There is no locking or sharing; to collaborate, add a `backend` block in `providers.tf` and run `terraform init -migrate-state`.
 
 ## Expected Results
 

@@ -24,6 +24,10 @@ terraform output -raw bootc_ansible_output > inventory.yaml
 
 Then continue with the [`bootc-mke3` install runbook](../../docs/installation-guide/install-bootc-mke3.md) using `inventory.yaml` as the ansible inventory.
 
+## State
+
+State is local (default backend): `terraform.tfstate` is written to this directory. It is gitignored but contains sensitive values (including the generated SSH private key material and node details), so keep it private and never commit it. There is no locking or sharing, so only one operator should apply this root; to collaborate, add a `backend` block in `versions.tf` and run `terraform init -migrate-state`.
+
 ## Structure
 
 This folder is intentionally thin — `main.tf` calls the upstream `mke3` example as a module (`terraform-mirantis-modules/provision-aws/mirantis//examples/mke3`), and `variables.tf`/`outputs.tf` mirror only the inputs/outputs `bootc-mke3` actually needs (the upstream example's launchpad-oriented `mke`/`mke_connect`/`launchpad_yaml` surface is satisfied internally with placeholders in `main.tf` and not exposed). To pick up a newer upstream release, bump the `version` pin in `main.tf` and diff `variables.tf`/`outputs.tf` against the upstream example's `variables.tf`/`output.tf`.
