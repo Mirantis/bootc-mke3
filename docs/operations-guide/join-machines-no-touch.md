@@ -325,6 +325,17 @@ Notes:
 - Recovery, from the console or a
   [node debug shell](node-debug-shell.md): `systemctl unmask sshd`.
 
+A configuration that also hardens the kernel by setting
+`kernel.modules_disabled = 1` (current images ship `0`, in
+`bootc/mke3/static/secure-kernel-params.conf`) locks the module subsystem
+once the sysctl applies, so any module a workload loads on demand after that
+point fails. kube-proxy's `xt_statistic` is the one this affects in
+practice: the symptom is calico-node's `install-cni` init container in
+`CrashLoopBackOff`, with kube-proxy logging `iptables-restore: Couldn't load
+match 'statistic'`. Under that configuration the payload must preload the
+module — see [What else should the provisioning payload
+include?](#what-else-should-the-provisioning-payload-include).
+
 ### What else should the provisioning payload include?
 
 The no-touch join adds the machine to the cluster and changes nothing else
@@ -352,27 +363,25 @@ Opening the [full post-join port set](#port-requirements), not just the
 join-minimum rows, avoids a second pass once the machine is carrying
 workloads.
 
-**Kernel module preloading.** Current images set
-`kernel.modules_disabled = 0` (`bootc/mke3/static/secure-kernel-params.conf`),
-so modules load on demand and no preloading is required. A configuration
-that re-enables the lockdown (`kernel.modules_disabled = 1`) blocks every
-`modprobe` issued after the sysctl applies, including kube-proxy's load of
-`xt_statistic`; the symptom is calico-node's `install-cni` init container in
-`CrashLoopBackOff` with kube-proxy logging `iptables-restore: Couldn't load
-match 'statistic'`.
+**Kernel modules.** A module that must be present before the lockdown sysctl
+applies, or before a workload asks for it, is listed in
+`/etc/modules-load.d/` — for example `/etc/modules-load.d/xt_statistic.conf`
+containing the single line `xt_statistic`.
+`systemd-modules-load.service` is ordered `Before=systemd-sysctl.service`, so
+a module listed there loads before any `kernel.modules_disabled` setting
+applies. This takes effect from the *next* boot, so a machine that has
+already joined needs a reboot for it. The payload examples include a reboot
+unit gated on the join sentinel (`/var/lib/mke3/joined`) so it cannot race
+the join, and on an `lsmod` check so it is skipped when the module is
+already loaded — rebooting a joined machine needlessly restarts
+`calico-node` and produces a transient `docker node ls` "Down" reading.
 
-Under that configuration, list the module in `/etc/modules-load.d/` — for
-example `/etc/modules-load.d/xt_statistic.conf` containing the single line
-`xt_statistic`. `systemd-modules-load.service` is ordered
-`Before=systemd-sysctl.service`, so a module listed there loads before the
-lockdown applies, but only from the *next* boot, so a machine that has
-already joined needs a reboot for it to take effect. The payload examples
-include a reboot unit gated on the join sentinel (`/var/lib/mke3/joined`) so
-it cannot race the join, and on an `lsmod` check so it is skipped when the
-module is already present. Keep the check: rebooting a joined machine
-needlessly restarts `calico-node` and produces a transient `docker node ls`
-"Down" reading.
-
-**Hardening.** See [Does the joined machine end up hardened (sshd masked,
-sudo
-revoked)?](#does-the-joined-machine-end-up-hardened-sshd-masked-sudo-revoked)
+**systemd service changes.** Enabling, disabling or masking a unit
+(firewalld and sshd above, and anything else the machine's role needs) is
+part of the payload for the same reason: the join changes no unit except
+`swarm-join.service`, which disables itself on success. A kickstart `%post`
+can use `services --enabled=`/`--disabled=` in the main command section or
+`systemctl` against the installed tree; cloud-init `runcmd` runs
+`systemctl` against the live system, where `--now` avoids a reboot.
+Masking, rather than disabling, is required for any unit another unit pulls
+in with `Wants=` — see the hardening entry above for the sshd case.
