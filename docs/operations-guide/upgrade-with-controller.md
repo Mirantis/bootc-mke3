@@ -51,7 +51,87 @@ No SSH and no Ansible inventory are required — only `kubectl` access via the
 
 ## Procedure
 
-### 1. Verify target image access
+### 1. Confirm the cluster is ready to upgrade
+
+The controller drives every node unattended once the CR is applied, so a
+cluster that is already degraded, or that carries state from a previous
+upgrade, fails part-way through. Run these checks first; each one names what
+to do when it does not hold.
+
+**Kubernetes.** Every node `Ready`, with no pressure condition set:
+
+```sh
+kubectl get nodes
+kubectl get nodes -o json | jq -r '.items[] | .metadata.name as $n
+  | .status.conditions[] | select(.type!="Ready" and .status=="True")
+  | "\($n) \(.type)"'
+```
+
+The second command prints nothing on a healthy cluster. Any `MemoryPressure`,
+`DiskPressure` or `PIDPressure` row names a node to clear before upgrading —
+the upgrade pulls images and writes a new OS deployment on every node, both
+of which need disk.
+
+No workload is stuck:
+
+```sh
+kubectl get pods -A --field-selector=status.phase!=Running,status.phase!=Succeeded
+```
+
+Investigate anything listed. A pod already `Pending` for lack of capacity
+will not schedule any better while nodes are being drained in sequence.
+
+**cluster-upgrade-controller.** Deployment available, CRD present:
+
+```sh
+kubectl -n mke get deploy cluster-upgrade-controller
+kubectl get crd clusterupgrades.upgrade.mirantis.com
+```
+
+`READY` must read `1/1`. A `CrashLoopBackOff` or repeatedly restarting pod
+means the controller cannot reconcile the CR you are about to create;
+diagnose with `kubectl -n mke logs deploy/cluster-upgrade-controller` before
+going further.
+
+No upgrade is already in flight or left behind:
+
+```sh
+kubectl get clusterupgrades
+```
+
+An existing CR in `Upgrading` must finish first. One left in `Failed` must be
+resolved — roll back or delete it, see [Roll back a bootc-mke3
+upgrade](rollback-bootc-mke3.md) — before a new CR is created.
+
+**system-upgrade-controller.** This is what executes the per-node work, so
+the upgrade cannot proceed without it:
+
+```sh
+kubectl -n system-upgrade get deploy system-upgrade-controller
+kubectl get crd plans.upgrade.cattle.io
+kubectl -n system-upgrade get plans,jobs,pods
+```
+
+The deployment must read `1/1` and the CRD must exist. The third command
+should show no leftover `Plan`, and no `Job` or pod from a previous upgrade
+still running or in error — SUC's own TTL
+(`SYSTEM_UPGRADE_JOB_TTL_SECONDS_AFTER_FINISH`, 900s) removes completed jobs,
+so anything older is residue worth clearing.
+
+**MKE and Swarm.** Expected machine count present and manager quorum intact:
+
+```sh
+kubectl get nodes -l node-role.kubernetes.io/master
+docker node ls
+```
+
+Manager count must be odd and every manager reachable; upgrading with a
+manager already down leaves no quorum margin when the next one reboots. A
+worker reported `Down` that is `Ready` in `kubectl get nodes` is the known
+cosmetic case described in [no-touch
+join](join-machines-no-touch.md) and does not block the upgrade.
+
+### 2. Verify target image access
 
 Before applying the CR, confirm the target `mirantis/ucp:<version>` upgrade
 image and (if `spec.os.image` is set) the target bootc OS image are both
@@ -64,7 +144,7 @@ If `spec.os.image` is set, verify its cosign signature before applying the
 CR — see
 [Verify bootc-mke3 image signatures](verify-image-signatures.md#at-installswitch-time).
 
-### 2. Apply the `ClusterUpgrade` CR
+### 3. Apply the `ClusterUpgrade` CR
 
 ```yaml
 apiVersion: upgrade.mirantis.com/v1alpha1
@@ -96,7 +176,7 @@ spec:
   batches of `workerConcurrency`.
 - Apply with `kubectl apply -f <file>.yaml`.
 
-### 3. Monitor progress
+### 4. Monitor progress
 
 ```sh
 # High-level phase and active step
