@@ -340,16 +340,22 @@ Notes:
   session, and run them in a single elevated context — revoking sudo first
   removes the escalation the mask needs.
 - Masking sshd before the join is confirmed leaves no shell access for
-  diagnosing a failed join. To keep a diagnosis window, gate the hardening on
-  `/var/lib/mke3/joined` existing, or apply it as a separate step once the
-  machine reports `Ready`.
+  diagnosing a failed join. A one-shot `runcmd` test for
+  `/var/lib/mke3/joined` is not a usable gate: `cloud-final.service` can run
+  while the join is still retrying, find no sentinel, skip the hardening and
+  never run again. To keep a diagnosis window, install a unit ordered after
+  `swarm-join.service` that waits for the sentinel and hardens then, or
+  harden as a separate step once the machine reports `Ready` — in both cases
+  decide what happens to a machine whose join never succeeds.
 - Recovery, from the console or a
   [node debug shell](node-debug-shell.md): `systemctl unmask sshd`.
 
 A configuration that also hardens the kernel by setting
-`kernel.modules_disabled = 1` (current images ship `0`, in
-`bootc/mke3/static/secure-kernel-params.conf`) locks the module subsystem
-once the sysctl applies, so any module loaded on demand after that point
-fails. The image preloads the modules MKE and Calico need, so this bites
-only a workload needing something else — preload it as described above.
+`kernel.modules_disabled = 1` locks the module subsystem once the sysctl
+applies, so any module loaded on demand after that point fails. Current
+images ship `0` in `/usr/lib/sysctl.d/20-secure-kernel-params.conf`; verify
+the live value with `sysctl kernel.modules_disabled` rather than assuming
+either setting. Under the lockdown, the image still preloads the modules MKE
+and Calico need, so it bites only a workload needing something else —
+preload it as described above.
 
