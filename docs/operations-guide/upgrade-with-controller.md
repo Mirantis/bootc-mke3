@@ -124,20 +124,25 @@ the upgrade cannot proceed without it:
 
 ```sh
 kubectl -n system-upgrade get deploy system-upgrade-controller
-kubectl -n system-upgrade get plans,jobs,pods
+kubectl -n system-upgrade get plans,jobs
 ```
 
-The deployment must read `1/1`. The second command
-should show no leftover `Plan`, and no `Job` or pod from a previous upgrade
-still running or in error — SUC's own TTL
-(`SYSTEM_UPGRADE_JOB_TTL_SECONDS_AFTER_FINISH`, 900s) removes completed jobs,
-so anything older is residue worth clearing.
+The deployment must read `1/1`. The second command should return `No
+resources found` on a cluster with no upgrade history: a leftover `Plan`
+re-fires against nodes that join later, and a `Job` still running or in
+error is a previous upgrade that never finished. SUC's own TTL
+(`SYSTEM_UPGRADE_JOB_TTL_SECONDS_AFTER_FINISH`, 900s) removes completed
+jobs, so anything older is residue worth clearing.
+
+Do not extend this to `pods`: the `system-upgrade` namespace also holds the
+`system-upgrade-controller` and `machine-config-controller` pods themselves,
+which are expected to be `Running` and are not upgrade residue.
 
 **MKE and Swarm.** Expected machine count present and manager quorum intact:
 
 ```sh
 kubectl get nodes -l node-role.kubernetes.io/master
-docker node ls
+docker node ls     # source env.sh from inside the bundle directory first
 ```
 
 Manager count must be odd and every manager reachable; upgrading with a
