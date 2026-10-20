@@ -297,12 +297,33 @@ join-minimum rows, avoids a second pass once the machine is carrying
 workloads.
 
 **Kernel modules.** The image preloads what MKE and Calico need. Any
-additional module a workload requires is listed in `/etc/modules-load.d/`,
-one name per line, which makes it present from the next boot onward.
-Where `kernel.modules_disabled` is `0`, as on current images, a machine
-that has already joined can load it immediately with `modprobe` and keep
-the drop-in for subsequent boots; under the lockdown the drop-in is the
-only route and the machine needs a reboot.
+additional module a workload requires is written as a drop-in, one module
+name per line. In a kickstart `%post`:
+
+```
+cat > /etc/modules-load.d/site-extra.conf <<'EOF'
+nfs
+nfsv4
+EOF
+```
+
+As cloud-init, either the same line in `runcmd` or a `write_files` entry:
+
+```yaml
+write_files:
+  - path: /etc/modules-load.d/site-extra.conf
+    permissions: '0644'
+    content: |
+      nfs
+      nfsv4
+```
+
+`systemd-modules-load.service` loads the drop-in on every boot, before any
+`kernel.modules_disabled` setting applies, so the module is present from the
+machine's first boot. Where that value is `0`, as on current images, a
+machine that has already joined can also load it immediately with
+`modprobe <module>`, keeping the drop-in for subsequent boots; under the
+lockdown the drop-in is the only route and the machine needs a reboot.
 
 **systemd service changes.** Enabling, disabling or masking a unit
 (firewalld and sshd above, and anything else the machine's role needs) is
