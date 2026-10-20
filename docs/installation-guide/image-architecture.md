@@ -24,8 +24,8 @@ split.
 
 ## Kernel modules
 
-This is the most consequential part of the image for cluster networking,
-because module loading is permanently disabled part-way through boot.
+This is a consequential part of the image for cluster networking, because
+the module set available to a node is largely fixed at boot.
 
 ### The allowlist and the lockdown latch
 
@@ -33,20 +33,25 @@ because module loading is permanently disabled part-way through boot.
 |---|---|
 | `/usr/lib/modules-load.d/mke-modules.conf` | Allowlist of modules loaded at boot by `systemd-modules-load.service` |
 | `/usr/lib/dracut/dracut.conf.d/mke-modules.conf` | `add_drivers+=` mirror of the same list, embedding those `.ko` files in the initramfs (`dracut --regenerate-all --force` runs at image build) |
-| `/usr/lib/sysctl.d/20-secure-kernel-params.conf` | Sets `kernel.modules_disabled = 1`, alongside `kernel.dmesg_restrict` and `kernel.yama.ptrace_scope` |
+| `/usr/lib/sysctl.d/20-secure-kernel-params.conf` | Sets `kernel.modules_disabled`, alongside `kernel.dmesg_restrict` and `kernel.yama.ptrace_scope` |
 
 What makes the preload effective is unit ordering:
 `systemd-modules-load.service` is ordered `Before=systemd-sysctl.service`,
 so every module in any `modules-load.d` directory is loaded before
-`kernel.modules_disabled = 1` is applied.
+`kernel.modules_disabled` is applied.
 
 > [!IMPORTANT]
-> `kernel.modules_disabled = 1` is a **one-way latch**. Once set, no module
-> can be loaded for the remainder of the boot session — not by `modprobe`,
-> not by a kernel autoload triggered on demand, and not by any sysctl
-> change, `MachineConfigChange` included. The only way to gain a module is
-> to have it listed before the latch applies, which in practice means
-> changing the module list and rebooting.
+> **Current images ship `kernel.modules_disabled = 0`**, so modules load on
+> demand after boot. The value was `1` on images built before
+> `bootc-mirantis` commit `4a31416` (2026-09-28). Read the live value with
+> `sysctl kernel.modules_disabled` before relying on either behaviour.
+>
+> Where it is `1` it is a **one-way latch**: no module can be loaded for the
+> remainder of the boot session — not by `modprobe`, not by a kernel
+> autoload triggered on demand, and not by any sysctl change,
+> `MachineConfigChange` included. The only way to gain a module is to have
+> it listed before the latch applies, which in practice means changing the
+> module list and rebooting.
 
 The practical symptom of a missing module is a workload failing to program
 the dataplane rather than an obvious module error — for example

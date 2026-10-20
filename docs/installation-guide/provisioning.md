@@ -67,15 +67,17 @@ QCOW2 is publicly announced/downloadable. Where this documentation offers
 both mechanisms, prefer kickstart unless you are specifically working with
 a cloud build.
 
-Some configuration has to exist **before the machine first boots**. Extra
-kernel modules are the load-bearing case: the image latches
-`kernel.modules_disabled=1` early in boot, after which no module can be
-loaded until the next reboot. Disabling a baked service is the other common
-case. Both require a machine source you can customise — the **Generic** ISO
-with your own kickstart file, or a cloud build with cloud-init user-data.
-The **Simple** ISO embeds its own kickstart and exposes no such hook, so on
-it these changes can only be made after installation, on the running node,
-with a reboot wherever the module latch is involved. See
+Some configuration is best made **before the machine first boots**. Extra
+kernel modules are the load-bearing case: a module declared in the payload
+is present from first boot, and on an image that latches
+`kernel.modules_disabled=1` early in boot that is the only way to get it
+without another reboot (current images ship `0`). Disabling a baked service
+is the other common case. Both require a machine source you can customise —
+the **Generic** ISO with your own kickstart file, or a cloud build with
+cloud-init user-data. The **Simple** ISO embeds its own kickstart and
+exposes no such hook, so on it these changes can only be made after
+installation, on the running node, with a reboot wherever the module latch
+is involved. See
 [Image architecture](image-architecture.md) for what the image ships and
 which customisation points are supported.
 
