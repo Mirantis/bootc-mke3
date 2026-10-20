@@ -74,8 +74,9 @@ builds are primarily used for internal testing; QCOW2 is publicly
 announced/downloadable. systemd credentials work on either, where the
 infrastructure can deliver them.
 
-Two node-local gaps must be handled in the same provisioning payload,
-whichever delivery path you use:
+Node-local gaps must be handled in the same provisioning payload, whichever
+delivery path you use. The firewall is one on every image; kernel module
+preloading is another on older images (see the F.A.Q):
 
 - **Firewall.** A fresh machine's own firewalld (active by default) ships
   only the `ssh`, `cockpit`, and `dhcpv6-client` services — none of the
@@ -94,43 +95,13 @@ whichever delivery path you use:
   firewall-equivalent to one Ansible actually installed. The
   `firewall-cmd --permanent` + `--reload` pair takes effect immediately; no
   reboot is needed.
-- **Kernel module preload.** Baked-in host hardening sets
-  `kernel.modules_disabled=1`, which blocks loading the `xt_statistic`
-  kernel module on any node whose kube-proxy starts *after* that lockdown
-  sysctl has already applied — which used to be every node except whichever
-  one happened to win the boot-time race during the initial cluster
-  stand-up. **On any image built from current `bootc-mirantis` `main`, this
-  no longer applies**: `xt_statistic` is preloaded via
-  `dracut-mke-modules.conf`/`mke-modules.conf` and is present on **first
-  boot**, before the lockdown sysctl ever applies, on every node including
-  no-touch-joined workers — confirmed with zero `calico-node` restarts
-  across managers, Ansible-joined workers, and no-touch-joined workers on
-  the same image. On an **older** image (predating that fix) the symptom is
-  calico-node's `install-cni` init container `CrashLoopBackOff`, with
-  kube-proxy logging `iptables-restore: Couldn't load match 'statistic'`.
-  Preload the module via `/etc/modules-load.d/xt_statistic.conf` (content:
-  the single line `xt_statistic`) — `systemd-modules-load.service` is
-  ordered `Before=systemd-sysctl.service`, so a module listed there loads
-  before the lockdown sysctl applies, but only on the *next* boot, so an
-  already-running no-touch-joined worker needs a self-triggered reboot,
-  gated on the join sentinel (`/var/lib/mke3/joined`, see [no-touch
-  join](no-touch-join.md)) so it can't race the join itself.
-
-  **The examples below check for the module before rebooting, so on a
-  current image the reboot is skipped entirely.** Confirmed necessary: on
-  an image where the module is already preloaded, unconditionally
-  rebooting every joined worker restarts `calico-node` for no reason and
-  produces a transient, unhelpful `docker node ls` "Down" reading right
-  after each join (harmless, self-resolves, but needlessly alarming and
-  needlessly disruptive). Keep the check even once you're confident your
-  fleet's images are current — it costs nothing and protects against
-  accidentally joining an older image into the mix.
 
 #### Bare metal (kickstart — the standard path; file shredded after join)
 
 Append to the kickstart `%post`: the credential file, the firewalld
-services (correct zones), the `xt_statistic` preload, and the
-sentinel-gated reboot unit:
+services (correct zones), the `xt_statistic` preload and the
+sentinel-gated reboot unit (see [Do the examples need the `xt_statistic`
+preload and the reboot unit?](#do-the-examples-need-the-xt_statistic-preload-and-the-reboot-unit)):
 
 ```
 %post --erroronfail
@@ -367,3 +338,46 @@ Notes:
   machine reports `Ready`.
 - Recovery, from the console or a
   [node debug shell](node-debug-shell.md): `systemctl unmask sshd`.
+
+### Do the examples need the `xt_statistic` preload and the reboot unit?
+
+Not on an image built from current `bootc-mirantis` `main`. The examples
+keep both because they cost nothing there and cover older images.
+
+Baked-in host hardening sets `kernel.modules_disabled=1`, which blocks
+loading the `xt_statistic` kernel module on any node whose kube-proxy starts
+*after* that lockdown sysctl has applied — which used to be every node
+except whichever one won the boot-time race during the initial cluster
+stand-up. On a current image `xt_statistic` is preloaded via
+`dracut-mke-modules.conf`/`mke-modules.conf` and is present on **first
+boot**, before the lockdown sysctl applies, on every node including
+no-touch-joined workers — confirmed with zero `calico-node` restarts across
+managers, Ansible-joined workers and no-touch-joined workers on the same
+image.
+
+On an **older** image the symptom is calico-node's `install-cni` init
+container in `CrashLoopBackOff`, with kube-proxy logging `iptables-restore:
+Couldn't load match 'statistic'`. The fix is to preload the module via
+`/etc/modules-load.d/xt_statistic.conf` (content: the single line
+`xt_statistic`). `systemd-modules-load.service` is ordered
+`Before=systemd-sysctl.service`, so a module listed there loads before the
+lockdown sysctl applies — but only on the *next* boot, so an already-running
+no-touch-joined worker needs a self-triggered reboot. The reboot unit in the
+examples is gated on the join sentinel (`/var/lib/mke3/joined`, see
+[no-touch join](no-touch-join.md)) so it cannot race the join itself.
+
+The examples check for the module before rebooting, so on a current image
+the reboot is skipped entirely. The check is necessary: on an image where
+the module is already preloaded, unconditionally rebooting every joined
+worker restarts `calico-node` for no reason and produces a transient
+`docker node ls` "Down" reading right after each join. It self-resolves, but
+it is disruptive and misleading. Keep the check even with a fleet on current
+images — it guards against an older image joining the mix.
+
+### Does loading any other kernel module need the same treatment?
+
+Yes. `kernel.modules_disabled=1` blocks every late `modprobe`, not just
+`xt_statistic`. A module a workload needs must be listed in
+`/etc/modules-load.d/` by the provisioning payload and be loaded before the
+lockdown sysctl applies, which means it is in force from the next boot
+onward, not from the moment the file is written.
