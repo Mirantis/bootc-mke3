@@ -282,7 +282,15 @@ firewall is opened. Two options:
 - Disable firewalld, where a perimeter firewall already restricts the
   equivalent ports. This is the no-touch equivalent of the installer's
   `disable_firewalld` variable. That variable's value for the cluster has no
-  effect here — the installer never runs on this machine.
+  effect here — the installer never runs on this machine. In a kickstart
+  `%post`, or a cloud-init `runcmd`:
+
+  ```
+  systemctl disable --now firewalld
+  ```
+
+  Nothing pulls firewalld in with `Wants=`, so `disable` is enough; use
+  `mask` only to prevent a later `systemctl start`.
 
 Opening the [full post-join port set](#port-requirements), not just the
 join-minimum rows, avoids a second pass once the machine is carrying
@@ -316,14 +324,23 @@ no-touch mechanism joins the machine to the cluster and changes nothing else:
 so hardening can be applied before, during or after the join without affecting
 it.
 
-For a cluster that is expected to be hardened, add to the provisioning
-configuration, substituting the user your configuration creates:
+For a cluster that is expected to be hardened, add both of the following to
+the provisioning configuration.
+
+Revoke the provisioning user's sudo, substituting the user your
+configuration creates:
 
 ```
 gpasswd -d <provisioning-user> wheel 2>/dev/null || true
+gpasswd -d <provisioning-user> sudo 2>/dev/null || true
 sed -i '/^<provisioning-user>[[:space:]]/d' /etc/sudoers
 find /etc/sudoers.d/ -maxdepth 1 -type f \
   -exec sed -i '/^<provisioning-user>[[:space:]]/d' {} \;
+```
+
+Disable SSH — mask rather than disable, and `--now` so no reboot is needed:
+
+```
 systemctl mask --now sshd
 ```
 
@@ -337,9 +354,10 @@ Notes:
   removal are written into the installed tree, so the machine's first boot is
   already hardened. In cloud-init `runcmd`, `systemctl mask --now sshd` stops
   the running daemon and installs the mask in the same call.
-- **Revoke sudo before masking sshd** when both run over an existing SSH
-  session, and run them in a single elevated context — revoking sudo first
-  removes the escalation the mask needs.
+- **Run both in a single elevated context, sudo revocation first.** Masking
+  sshd first drops an existing SSH session before the revocation can run;
+  revoking sudo first is safe, because the shell is already root and losing
+  `wheel` does not affect it.
 - Masking sshd before the join is confirmed leaves no shell access for
   diagnosing a failed join. A one-shot `runcmd` test for
   `/var/lib/mke3/joined` is not a usable gate: `cloud-final.service` can run
