@@ -86,8 +86,7 @@ copying an example below.
 Append to the kickstart `%post`: the credential file, plus the optional
 items from [What else should the provisioning payload
 include?](#what-else-should-the-provisioning-payload-include) — here the
-firewalld services (correct zones), the `xt_statistic` preload and the
-sentinel-gated reboot unit:
+firewalld services, in the correct zones:
 
 ```
 %post --erroronfail
@@ -102,20 +101,6 @@ firewall-cmd --zone=trusted --add-interface=lo --permanent
 firewall-cmd --zone=public --add-service=mke_worker_internal --permanent
 firewall-cmd --zone=trusted --add-service=mke_worker_self --permanent
 firewall-cmd --reload
-
-echo xt_statistic > /etc/modules-load.d/xt_statistic.conf
-
-cat > /etc/systemd/system/mke3-postjoin-reboot.service <<'EOF'
-[Unit]
-Description=Reboot once to activate xt_statistic after no-touch join
-After=swarm-join.service
-ConditionPathExists=!/var/lib/mke3/postjoin-reboot-done
-
-[Service]
-Type=oneshot
-ExecStart=/bin/sh -c 'for i in $(seq 1 60); do [ -f /var/lib/mke3/joined ] && break; sleep 5; done; [ -f /var/lib/mke3/joined ] || exit 0; touch /var/lib/mke3/postjoin-reboot-done; lsmod | grep -q xt_statistic && exit 0; systemctl reboot'
-EOF
-systemctl enable --now mke3-postjoin-reboot.service
 %end
 ```
 
@@ -130,9 +115,9 @@ file itself is written to tmpfs and never touches disk. Note that cloud-init ind
 under `/var/lib/cloud`; that cache is scrubbed automatically after a
 successful join.
 
-The same firewalld and `xt_statistic` handling as the kickstart path above,
-expressed as cloud-config — pass as instance user-data (e.g. `aws ec2
-run-instances --user-data file://...`):
+The same firewalld handling as the kickstart path above, expressed as
+cloud-config — pass as instance user-data (e.g. `aws ec2 run-instances
+--user-data file://...`):
 
 ```yaml
 #cloud-config
@@ -142,24 +127,11 @@ write_files:
     content: |
       SWARM_TOKEN=SWMTKN-1-<your-worker-token>
       SWARM_MANAGER=10.0.0.10:2377
-  - path: /etc/systemd/system/mke3-postjoin-reboot.service
-    permissions: '0644'
-    content: |
-      [Unit]
-      Description=Reboot once to activate xt_statistic after no-touch join
-      After=swarm-join.service
-      ConditionPathExists=!/var/lib/mke3/postjoin-reboot-done
-
-      [Service]
-      Type=oneshot
-      ExecStart=/bin/sh -c 'for i in $(seq 1 60); do [ -f /var/lib/mke3/joined ] && break; sleep 5; done; [ -f /var/lib/mke3/joined ] || exit 0; touch /var/lib/mke3/postjoin-reboot-done; lsmod | grep -q xt_statistic && exit 0; systemctl reboot'
 runcmd:
   - firewall-cmd --zone=trusted --add-interface=lo --permanent
   - firewall-cmd --zone=public --add-service=mke_worker_internal --permanent
   - firewall-cmd --zone=trusted --add-service=mke_worker_self --permanent
   - firewall-cmd --reload
-  - echo xt_statistic > /etc/modules-load.d/xt_statistic.conf
-  - systemctl enable --now mke3-postjoin-reboot.service
 ```
 
 On AWS, harden the instance metadata service so the token in user-data is not
@@ -217,7 +189,7 @@ node is broken. Don't block a batch, or start troubleshooting, on
 > configured yet. `mke-images.service` is ordered `Before=getty.target`
 > (`WantedBy=getty.target`), which places it ahead of `multi-user.target` in
 > the boot sequence — and `cloud-final.service` (the unit that runs
-> cloud-init's `runcmd`, i.e. the firewalld/`xt_statistic` steps above on
+> cloud-init's `runcmd`, i.e. the firewalld steps above on
 > cloud builds) depends on `multi-user.target`. `mke-images.service` loading
 > the baked-in product/controller image tars can take several minutes, so on
 > a freshly no-touch-joined node the kubelet/swarm-join path can report
@@ -328,13 +300,9 @@ Notes:
 A configuration that also hardens the kernel by setting
 `kernel.modules_disabled = 1` (current images ship `0`, in
 `bootc/mke3/static/secure-kernel-params.conf`) locks the module subsystem
-once the sysctl applies, so any module a workload loads on demand after that
-point fails. kube-proxy's `xt_statistic` is the one this affects in
-practice: the symptom is calico-node's `install-cni` init container in
-`CrashLoopBackOff`, with kube-proxy logging `iptables-restore: Couldn't load
-match 'statistic'`. Under that configuration the payload must preload the
-module — see [What else should the provisioning payload
-include?](#what-else-should-the-provisioning-payload-include).
+once the sysctl applies, so any module loaded on demand after that point
+fails. The image preloads the modules MKE and Calico need, so this bites
+only a workload needing something else — preload it, as below.
 
 ### What else should the provisioning payload include?
 
@@ -363,18 +331,12 @@ Opening the [full post-join port set](#port-requirements), not just the
 join-minimum rows, avoids a second pass once the machine is carrying
 workloads.
 
-**Kernel modules.** A module that must be present before the lockdown sysctl
-applies, or before a workload asks for it, is listed in
-`/etc/modules-load.d/` — for example `/etc/modules-load.d/xt_statistic.conf`
-containing the single line `xt_statistic`.
-`systemd-modules-load.service` is ordered `Before=systemd-sysctl.service`, so
-a module listed there loads before any `kernel.modules_disabled` setting
-applies. This takes effect from the *next* boot, so a machine that has
-already joined needs a reboot for it. The payload examples include a reboot
-unit gated on the join sentinel (`/var/lib/mke3/joined`) so it cannot race
-the join, and on an `lsmod` check so it is skipped when the module is
-already loaded — rebooting a joined machine needlessly restarts
-`calico-node` and produces a transient `docker node ls` "Down" reading.
+**Kernel modules.** The image preloads what MKE and Calico need. Any
+additional module a workload requires is listed in `/etc/modules-load.d/`,
+one name per line. `systemd-modules-load.service` is ordered
+`Before=systemd-sysctl.service`, so it loads before any
+`kernel.modules_disabled` setting applies — from the *next* boot, so a
+machine that has already joined needs a reboot for it.
 
 **systemd service changes.** Enabling, disabling or masking a unit
 (firewalld and sshd above, and anything else the machine's role needs) is
