@@ -290,10 +290,11 @@ workloads.
 
 **Kernel modules.** The image preloads what MKE and Calico need. Any
 additional module a workload requires is listed in `/etc/modules-load.d/`,
-one name per line. `systemd-modules-load.service` is ordered
-`Before=systemd-sysctl.service`, so it loads before any
-`kernel.modules_disabled` setting applies — from the *next* boot, so a
-machine that has already joined needs a reboot for it.
+one name per line, which makes it present from the next boot onward.
+Where `kernel.modules_disabled` is `0`, as on current images, a machine
+that has already joined can load it immediately with `modprobe` and keep
+the drop-in for subsequent boots; under the lockdown the drop-in is the
+only route and the machine needs a reboot.
 
 **systemd service changes.** Enabling, disabling or masking a unit
 (firewalld and sshd above, and anything else the machine's role needs) is
@@ -348,7 +349,8 @@ Notes:
   harden as a separate step once the machine reports `Ready` — in both cases
   decide what happens to a machine whose join never succeeds.
 - Recovery, from the console or a
-  [node debug shell](node-debug-shell.md): `systemctl unmask sshd`.
+  [node debug shell](node-debug-shell.md): `systemctl unmask sshd` then
+  `systemctl enable --now sshd` — unmasking alone leaves the daemon stopped.
 
 A configuration that also hardens the kernel by setting
 `kernel.modules_disabled = 1` locks the module subsystem once the sysctl
