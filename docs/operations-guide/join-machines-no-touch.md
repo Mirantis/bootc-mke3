@@ -256,6 +256,55 @@ standard process for all post-install additions.
 The `SWMTKN-1-<ca-hash>-<secret>` token embeds the cluster CA hash, so the
 joining node validates the manager's TLS certificate as part of the join.
 
+### What else should the provisioning payload include?
+
+The no-touch join adds the machine to the cluster and changes nothing else
+about it. Anything else the machine needs is applied by whatever provisions
+it, in the same kickstart `%post` or cloud-init configuration that carries
+the join credential.
+
+**Hardening.** For a cluster expected to be hardened, masking sshd and
+revoking the provisioning user's sudo belong here too — see [Does the
+joined machine end up hardened (sshd masked, sudo
+revoked)?](#does-the-joined-machine-end-up-hardened-sshd-masked-sudo-revoked).
+
+**Firewall rules.** A fresh machine's firewalld is active by default and
+ships only the `ssh`, `cockpit` and `dhcpv6-client` services — none of the
+cluster ports. The join itself still succeeds, being outbound-only, but the
+machine is unreachable for inbound gossip and overlay traffic until the
+firewall is opened. Two options:
+
+- Open the cluster ports, using the same zones and services a worker gets
+  from the installer's `tasks/mke-open-ports-tasks.yml` — `public` zone for
+  `mke_worker_internal`, `trusted` zone plus a trusted loopback interface
+  for `mke_worker_self`. `firewall-cmd --permanent` followed by
+  `firewall-cmd --reload` takes effect immediately; no reboot.
+- Disable firewalld, where a perimeter firewall already restricts the
+  equivalent ports. This is the no-touch equivalent of the installer's
+  `disable_firewalld` variable. That variable's value for the cluster has no
+  effect here — the installer never runs on this machine.
+
+Opening the [full post-join port set](#port-requirements), not just the
+join-minimum rows, avoids a second pass once the machine is carrying
+workloads.
+
+**Kernel modules.** The image preloads what MKE and Calico need. Any
+additional module a workload requires is listed in `/etc/modules-load.d/`,
+one name per line. `systemd-modules-load.service` is ordered
+`Before=systemd-sysctl.service`, so it loads before any
+`kernel.modules_disabled` setting applies — from the *next* boot, so a
+machine that has already joined needs a reboot for it.
+
+**systemd service changes.** Enabling, disabling or masking a unit
+(firewalld and sshd above, and anything else the machine's role needs) is
+part of the payload for the same reason: the join changes no unit except
+`swarm-join.service`, which disables itself on success. A kickstart `%post`
+can use `services --enabled=`/`--disabled=` in the main command section or
+`systemctl` against the installed tree; cloud-init `runcmd` runs
+`systemctl` against the live system, where `--now` avoids a reboot.
+Masking, rather than disabling, is required for any unit another unit pulls
+in with `Wants=` — see the hardening entry below for the sshd case.
+
 ### Does the joined machine end up hardened (sshd masked, sudo revoked)?
 
 Only if the provisioning configuration does it. Hardening a machine is the
@@ -302,48 +351,5 @@ A configuration that also hardens the kernel by setting
 `bootc/mke3/static/secure-kernel-params.conf`) locks the module subsystem
 once the sysctl applies, so any module loaded on demand after that point
 fails. The image preloads the modules MKE and Calico need, so this bites
-only a workload needing something else — preload it, as below.
+only a workload needing something else — preload it as described above.
 
-### What else should the provisioning payload include?
-
-The no-touch join adds the machine to the cluster and changes nothing else
-about it. Anything else the machine needs is applied by whatever provisions
-it, in the same kickstart `%post` or cloud-init configuration that carries
-the join credential.
-
-**Firewall rules.** A fresh machine's firewalld is active by default and
-ships only the `ssh`, `cockpit` and `dhcpv6-client` services — none of the
-cluster ports. The join itself still succeeds, being outbound-only, but the
-machine is unreachable for inbound gossip and overlay traffic until the
-firewall is opened. Two options:
-
-- Open the cluster ports, using the same zones and services a worker gets
-  from the installer's `tasks/mke-open-ports-tasks.yml` — `public` zone for
-  `mke_worker_internal`, `trusted` zone plus a trusted loopback interface
-  for `mke_worker_self`. `firewall-cmd --permanent` followed by
-  `firewall-cmd --reload` takes effect immediately; no reboot.
-- Disable firewalld, where a perimeter firewall already restricts the
-  equivalent ports. This is the no-touch equivalent of the installer's
-  `disable_firewalld` variable. That variable's value for the cluster has no
-  effect here — the installer never runs on this machine.
-
-Opening the [full post-join port set](#port-requirements), not just the
-join-minimum rows, avoids a second pass once the machine is carrying
-workloads.
-
-**Kernel modules.** The image preloads what MKE and Calico need. Any
-additional module a workload requires is listed in `/etc/modules-load.d/`,
-one name per line. `systemd-modules-load.service` is ordered
-`Before=systemd-sysctl.service`, so it loads before any
-`kernel.modules_disabled` setting applies — from the *next* boot, so a
-machine that has already joined needs a reboot for it.
-
-**systemd service changes.** Enabling, disabling or masking a unit
-(firewalld and sshd above, and anything else the machine's role needs) is
-part of the payload for the same reason: the join changes no unit except
-`swarm-join.service`, which disables itself on success. A kickstart `%post`
-can use `services --enabled=`/`--disabled=` in the main command section or
-`systemctl` against the installed tree; cloud-init `runcmd` runs
-`systemctl` against the live system, where `--now` avoids a reboot.
-Masking, rather than disabling, is required for any unit another unit pulls
-in with `Wants=` — see the hardening entry above for the sshd case.
