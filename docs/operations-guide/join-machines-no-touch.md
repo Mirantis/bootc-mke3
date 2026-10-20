@@ -326,3 +326,44 @@ standard process for all post-install additions.
 
 The `SWMTKN-1-<ca-hash>-<secret>` token embeds the cluster CA hash, so the
 joining node validates the manager's TLS certificate as part of the join.
+
+### Does the joined machine end up hardened (sshd masked, sudo revoked)?
+
+Only if the provisioning configuration does it. Hardening a machine is the
+responsibility of whoever provisions it, and belongs in the same kickstart
+`%post` or cloud-init configuration that carries the join credential. The
+no-touch mechanism joins the machine to the cluster and changes nothing else:
+`swarm-join.service` and `/usr/libexec/swarm-join` need neither sshd nor sudo,
+so hardening can be applied before, during or after the join without affecting
+it.
+
+For a cluster that is expected to be hardened, add to the provisioning
+configuration, substituting the user your configuration creates:
+
+```
+gpasswd -d <provisioning-user> wheel 2>/dev/null || true
+sed -i '/^<provisioning-user>[[:space:]]/d' /etc/sudoers
+find /etc/sudoers.d/ -maxdepth 1 -type f \
+  -exec sed -i '/^<provisioning-user>[[:space:]]/d' {} \;
+systemctl mask --now sshd
+```
+
+Notes:
+
+- **Mask, not disable.** On cloud images `cloud-init.service` carries
+  `Wants=sshd.service`, which activates a disabled unit on every boot; only a
+  masked unit stays inactive across reboots. See
+  [Harden MKE 3 Kubernetes](harden-mke3-kubernetes.md).
+- **No reboot is required.** In a kickstart `%post` the mask and the sudo
+  removal are written into the installed tree, so the machine's first boot is
+  already hardened. In cloud-init `runcmd`, `systemctl mask --now sshd` stops
+  the running daemon and installs the mask in the same call.
+- **Revoke sudo before masking sshd** when both run over an existing SSH
+  session, and run them in a single elevated context — revoking sudo first
+  removes the escalation the mask needs.
+- Masking sshd before the join is confirmed leaves no shell access for
+  diagnosing a failed join. To keep a diagnosis window, gate the hardening on
+  `/var/lib/mke3/joined` existing, or apply it as a separate step once the
+  machine reports `Ready`.
+- Recovery, from the console or a
+  [node debug shell](node-debug-shell.md): `systemctl unmask sshd`.
