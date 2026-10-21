@@ -321,6 +321,16 @@ machine](promote-demote-machine.md). Promote only once the machine reports
 manager count is even. The Ansible installer joins managers at install time
 only.
 
+Open the manager firewall services before promoting, if the machine's
+provisioning payload opened only the worker ones (as the examples in this
+guide do). A promoted machine needs the services the installer gives a
+manager — `mke_manager_external` and `mke_manager_internal` in the `public`
+zone, `mke_manager_self` in `trusted`
+(`ansible/tasks/mke-open-ports-tasks.yml`) — otherwise it is `Ready` as a
+worker and still blocks manager traffic once promoted. Add them the same way
+the worker services were added, or include them in the payload up front for
+any machine intended for promotion.
+
 ### Does this replace the Ansible worker join?
 
 After the initial install — yes. The Ansible installer joins the workers it
