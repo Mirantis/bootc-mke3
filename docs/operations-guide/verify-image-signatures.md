@@ -83,8 +83,8 @@ dev registry) that reference resolves to.
   [Generic image customisation](../installation-guide/iso-editions.md#generic-image-customisation).
 - **Upgrade:** verify the target `bootc_image_ref` (Ansible path, see
   [Upgrade via Ansible](upgrade-with-ansible.md)) or `spec.os.image`
-  (`ClusterUpgrade` CR path, see
-  [Upgrade via the ClusterUpgrade CR](upgrade-with-controller.md#1-determine-the-target-image-references))
+  (`ClusterUpgrade` CR path, see the target-image-access step in
+  [Upgrade via the ClusterUpgrade CR](upgrade-with-controller.md))
   before applying it — both drive `bootc switch`/`bootc upgrade` on cluster
   nodes.
 
