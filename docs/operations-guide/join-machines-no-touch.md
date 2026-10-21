@@ -319,11 +319,18 @@ write_files:
 ```
 
 `systemd-modules-load.service` loads the drop-in on every boot, before any
-`kernel.modules_disabled` setting applies, so the module is present from the
-machine's first boot. Where that value is `0`, as on current images, a
-machine that has already joined can also load it immediately with
-`modprobe <module>`, keeping the drop-in for subsequent boots; under the
-lockdown the drop-in is the only route and the machine needs a reboot.
+`kernel.modules_disabled` setting applies.
+
+**When it takes effect differs by path.** A kickstart `%post` writes into
+the installed tree, so the module is loaded on the machine's *first* boot.
+Cloud-init does not: `write_files` and `runcmd` both run after
+`systemd-modules-load.service` has already finished, and creating the
+drop-in does not re-run it, so on the cloud path the module is loaded from
+the *second* boot onward. To have it on a cloud machine's first boot,
+either `modprobe <module>` alongside the `write_files` entry (possible
+where `kernel.modules_disabled` is `0`, as on current images), or reboot
+after the join. Under the lockdown, `modprobe` fails and a reboot is the
+only route.
 
 **systemd service changes.** Enabling, disabling or masking a unit
 (firewalld and sshd above, and anything else the machine's role needs) is
