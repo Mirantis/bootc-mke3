@@ -116,8 +116,8 @@ does not ship.
 
 For provision-time recipes see
 [Common kickstart customisations](iso-editions.md#common-kickstart-customisations),
-and for the cloud-init equivalent and a worked example of the
-reboot-gating problem see
+and for the cloud-init equivalent — the authoritative worked procedure,
+including when the drop-in takes effect on that path — see
 [Join machines with no-touch join](../operations-guide/join-machines-no-touch.md).
 Across an existing cluster, have `machine-config-controller` maintain the
 drop-in and drive the reboot as a separate resource rather than editing

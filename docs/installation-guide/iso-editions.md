@@ -62,8 +62,12 @@ The image loads a fixed module allowlist at boot. Declaring any module your
 workloads need beyond that list here makes it present from the node's first
 boot, and is required on an image that sets `kernel.modules_disabled=1` —
 that latch is one-way, so a module not loaded before it applies cannot be
-loaded later by any means. Current images ship `0`; see [Kernel
-modules](image-architecture.md#kernel-modules).
+loaded later by any means. Current images ship `0`. Because this is a
+kickstart `%post`, the drop-in is written into the installed tree and the
+module is loaded on the node's first boot; the cloud-init path differs —
+see [Adding modules](image-architecture.md#adding-modules) for the timing
+table and [Kernel modules](image-architecture.md#kernel-modules) for the
+allowlist itself.
 
 ```
 %post --erroronfail
