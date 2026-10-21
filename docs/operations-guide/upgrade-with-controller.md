@@ -72,14 +72,22 @@ The second command prints nothing on a healthy cluster. Any `MemoryPressure`,
 the upgrade pulls images and writes a new OS deployment on every node, both
 of which need disk.
 
-No workload is stuck:
+No workload is stuck or failing. Phase alone is not enough — a pod whose
+container is in `CrashLoopBackOff`, or failing its readiness probe, stays in
+phase `Running` — so check both:
 
 ```sh
 kubectl get pods -A --field-selector=status.phase!=Running,status.phase!=Succeeded
+kubectl get pods -A -o json | jq -r '.items[]
+  | select([.status.containerStatuses[]? | select(.ready == false)] | length > 0)
+  | "\(.metadata.namespace)/\(.metadata.name)"'
 ```
 
-Investigate anything listed. A pod already `Pending` for lack of capacity
-will not schedule any better while nodes are being drained in sequence.
+The first lists pods that never reached `Running`; the second lists running
+pods with a container that is not ready, which is where a crash-looping
+workload shows up. Investigate anything either prints. A pod already
+`Pending` for lack of capacity will not schedule any better while nodes are
+being drained in sequence.
 
 **Custom resource definitions.** Both CRDs the upgrade uses must be present
 and `Established`, and must serve the API versions the CR and the controller
@@ -88,12 +96,15 @@ use:
 ```sh
 kubectl get crd clusterupgrades.upgrade.mirantis.com plans.upgrade.cattle.io \
   -o custom-columns=\
-'NAME:.metadata.name,ESTABLISHED:.status.conditions[?(@.type=="Established")].status,VERSIONS:.spec.versions[*].name'
+'NAME:.metadata.name,ESTABLISHED:.status.conditions[?(@.type=="Established")].status,SERVED:.spec.versions[?(@.served==true)].name'
 ```
 
 Both rows must read `True`, and `clusterupgrades.upgrade.mirantis.com` must
-list the `apiVersion` used by the CR in step 3 (`v1alpha1`). A missing CRD
-means the relevant controller was never installed or was removed —
+list the `apiVersion` used by the CR in step 3 (`v1alpha1`) in its `SERVED`
+column. The column filters on `served: true` deliberately: a version present
+in the CRD but not served is rejected by the API server, so listing every
+version would pass this check and still fail at `kubectl apply`. A missing
+CRD means the relevant controller was never installed or was removed —
 `kubectl apply -f` of the CR would fail with `no matches for kind`.
 `Established=False` means the API server has not yet accepted the definition;
 re-check before proceeding.
@@ -115,9 +126,13 @@ No upgrade is already in flight or left behind:
 kubectl get clusterupgrades
 ```
 
-An existing CR in `Upgrading` must finish first. One left in `Failed` must be
-resolved — roll back or delete it, see [Roll back a bootc-mke3
-upgrade](rollback-bootc-mke3.md) — before a new CR is created.
+Any CR in a non-terminal phase must reach a terminal one first:
+`Upgrading` and `RollingBack` are both actively mutating nodes. A CR left in
+`Failed` or `RollbackFailed` must be resolved before a new CR is created —
+see [Roll back a bootc-mke3 upgrade](rollback-bootc-mke3.md) for the phase
+model (`Failed` → `RollingBack` → `RolledBack` or `RollbackFailed`) and for
+what `RollbackFailed` needs. `Completed` and `RolledBack` are terminal and do
+not block a new upgrade.
 
 **system-upgrade-controller.** This is what executes the per-node work, so
 the upgrade cannot proceed without it:
@@ -142,14 +157,21 @@ which are expected to be `Running` and are not upgrade residue.
 
 ```sh
 kubectl get nodes -l node-role.kubernetes.io/master
-docker node ls     # source env.sh from inside the bundle directory first
+(cd <bundle-dir> && source env.sh && docker node ls)
 ```
 
+`docker node ls` needs the client bundle's Docker environment, not just
+`KUBECONFIG`: without `env.sh` sourced from inside the bundle directory it
+talks to whatever local Docker daemon is configured instead of the cluster.
+
 Manager count must be odd and every manager reachable; upgrading with a
-manager already down leaves no quorum margin when the next one reboots. A
-worker reported `Down` that is `Ready` in `kubectl get nodes` is the known
-cosmetic case described in [no-touch
-join](join-machines-no-touch.md) and does not block the upgrade.
+manager already down leaves no quorum margin when the next one reboots.
+A worker that `docker node ls` reports `Down` while `kubectl get nodes` has
+it `Ready` needs `docker node inspect <node>` before it is dismissed: the
+known benign case is specifically the `"Node not yet found in classic node
+inventory"` message described in [no-touch
+join](join-machines-no-touch.md). Any other reason is a real problem to
+resolve first.
 
 ### 2. Verify target image access
 
