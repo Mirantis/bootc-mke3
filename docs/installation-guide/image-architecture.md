@@ -106,8 +106,9 @@ drop-in takes effect depends on when it is created:
 
 | Created | Effective |
 |---|---|
-| At provision time (kickstart `%post`, cloud-init) | **First boot**, no extra reboot — the installed system has not booted yet |
-| On an already-running node | **After one reboot** — the latch is already set on the current boot |
+| Kickstart `%post` | **First boot**, no extra reboot — the drop-in is written into the installed tree before it has booted |
+| Cloud-init (`write_files`/`runcmd`) | **Second boot** — both run after `systemd-modules-load.service` has already finished, and creating a drop-in does not re-run it. For the module on first boot, `modprobe` it alongside the write (possible while `kernel.modules_disabled` is `0`), or reboot after provisioning; under the lockdown a reboot is the only route |
+| On an already-running node | **After one reboot** — or immediately via `modprobe` while `kernel.modules_disabled` is `0` |
 
 Because a module is only loadable if its `.ko` is reachable, this works for
 modules present in the image but unloaded; it cannot add a module the image

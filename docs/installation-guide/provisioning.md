@@ -68,10 +68,14 @@ both mechanisms, prefer kickstart unless you are specifically working with
 a cloud build.
 
 Some configuration is best made **before the machine first boots**. Extra
-kernel modules are the load-bearing case: a module declared in the payload
-is present from first boot, and on an image that latches
-`kernel.modules_disabled=1` early in boot that is the only way to get it
-without another reboot (current images ship `0`). Disabling a baked service
+kernel modules are the load-bearing case: a module declared in a kickstart
+payload is present from first boot, because `%post` writes into the
+installed tree before it boots. A cloud-init payload is not equivalent here
+— it runs after `systemd-modules-load.service`, so the module arrives on
+the second boot unless it is `modprobe`d alongside the write; see [Adding
+modules](image-architecture.md#adding-modules). On an image that latches
+`kernel.modules_disabled=1` early in boot, a reboot is the only route in
+that case (current images ship `0`). Disabling a baked service
 is the other common case. Both require a machine source you can customise —
 the **Generic** ISO with your own kickstart file, or a cloud build with
 cloud-init user-data. The **Simple** ISO embeds its own kickstart and
