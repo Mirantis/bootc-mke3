@@ -74,63 +74,19 @@ builds are primarily used for internal testing; QCOW2 is publicly
 announced/downloadable. systemd credentials work on either, where the
 infrastructure can deliver them.
 
-Two node-local gaps must be handled in the same provisioning payload,
-whichever delivery path you use:
-
-- **Firewall.** A fresh machine's own firewalld (active by default) ships
-  only the `ssh`, `cockpit`, and `dhcpv6-client` services — none of the
-  cluster ports. The swarm join itself still succeeds (it's outbound-only),
-  but the node is then unreachable for inbound gossip/overlay traffic until
-  the firewall is opened. This is unrelated to the cluster's
-  `disable_firewalld` Ansible variable (default `false` — Ansible-managed
-  nodes keep firewalld on and get per-service rules from
-  `tasks/mke-open-ports-tasks.yml`): a no-touch-joined worker is never
-  touched by the Ansible installer at all, so that variable's value
-  elsewhere is irrelevant here — the node keeps the OS image's raw
-  firewalld defaults until the provisioning payload configures it directly.
-  Use the same zones/services `mke-open-ports-tasks.yml` applies to a
-  worker (`public` zone for `mke_worker_internal`, `trusted` zone plus a
-  trusted loopback interface for `mke_worker_self`), so the node ends up
-  firewall-equivalent to one Ansible actually installed. The
-  `firewall-cmd --permanent` + `--reload` pair takes effect immediately; no
-  reboot is needed.
-- **Kernel module preload.** Baked-in host hardening sets
-  `kernel.modules_disabled=1`, which blocks loading the `xt_statistic`
-  kernel module on any node whose kube-proxy starts *after* that lockdown
-  sysctl has already applied — which used to be every node except whichever
-  one happened to win the boot-time race during the initial cluster
-  stand-up. **On any image built from current `bootc-mirantis` `main`, this
-  no longer applies**: `xt_statistic` is preloaded via
-  `dracut-mke-modules.conf`/`mke-modules.conf` and is present on **first
-  boot**, before the lockdown sysctl ever applies, on every node including
-  no-touch-joined workers — confirmed with zero `calico-node` restarts
-  across managers, Ansible-joined workers, and no-touch-joined workers on
-  the same image. On an **older** image (predating that fix) the symptom is
-  calico-node's `install-cni` init container `CrashLoopBackOff`, with
-  kube-proxy logging `iptables-restore: Couldn't load match 'statistic'`.
-  Preload the module via `/etc/modules-load.d/xt_statistic.conf` (content:
-  the single line `xt_statistic`) — `systemd-modules-load.service` is
-  ordered `Before=systemd-sysctl.service`, so a module listed there loads
-  before the lockdown sysctl applies, but only on the *next* boot, so an
-  already-running no-touch-joined worker needs a self-triggered reboot,
-  gated on the join sentinel (`/var/lib/mke3/joined`, see [no-touch
-  join](no-touch-join.md)) so it can't race the join itself.
-
-  **The examples below check for the module before rebooting, so on a
-  current image the reboot is skipped entirely.** Confirmed necessary: on
-  an image where the module is already preloaded, unconditionally
-  rebooting every joined worker restarts `calico-node` for no reason and
-  produces a transient, unhelpful `docker node ls` "Down" reading right
-  after each join (harmless, self-resolves, but needlessly alarming and
-  needlessly disruptive). Keep the check even once you're confident your
-  fleet's images are current — it costs nothing and protects against
-  accidentally joining an older image into the mix.
+The payload may need to carry more than the credential — firewall rules,
+kernel module preloading, and hardening are all applied by whoever
+provisions the machine, not by the join. See [What else should the
+provisioning payload
+include?](#what-else-should-the-provisioning-payload-include) before
+copying an example below.
 
 #### Bare metal (kickstart — the standard path; file shredded after join)
 
-Append to the kickstart `%post`: the credential file, the firewalld
-services (correct zones), the `xt_statistic` preload, and the
-sentinel-gated reboot unit:
+Append to the kickstart `%post`: the credential file, plus the optional
+items from [What else should the provisioning payload
+include?](#what-else-should-the-provisioning-payload-include) — here the
+firewalld services, in the correct zones:
 
 ```
 %post --erroronfail
@@ -145,20 +101,6 @@ firewall-cmd --zone=trusted --add-interface=lo --permanent
 firewall-cmd --zone=public --add-service=mke_worker_internal --permanent
 firewall-cmd --zone=trusted --add-service=mke_worker_self --permanent
 firewall-cmd --reload
-
-echo xt_statistic > /etc/modules-load.d/xt_statistic.conf
-
-cat > /etc/systemd/system/mke3-postjoin-reboot.service <<'EOF'
-[Unit]
-Description=Reboot once to activate xt_statistic after no-touch join
-After=swarm-join.service
-ConditionPathExists=!/var/lib/mke3/postjoin-reboot-done
-
-[Service]
-Type=oneshot
-ExecStart=/bin/sh -c 'for i in $(seq 1 60); do [ -f /var/lib/mke3/joined ] && break; sleep 5; done; [ -f /var/lib/mke3/joined ] || exit 0; touch /var/lib/mke3/postjoin-reboot-done; lsmod | grep -q xt_statistic && exit 0; systemctl reboot'
-EOF
-systemctl enable --now mke3-postjoin-reboot.service
 %end
 ```
 
@@ -173,9 +115,9 @@ file itself is written to tmpfs and never touches disk. Note that cloud-init ind
 under `/var/lib/cloud`; that cache is scrubbed automatically after a
 successful join.
 
-The same firewalld and `xt_statistic` handling as the kickstart path above,
-expressed as cloud-config — pass as instance user-data (e.g. `aws ec2
-run-instances --user-data file://...`):
+The same firewalld handling as the kickstart path above, expressed as
+cloud-config — pass as instance user-data (e.g. `aws ec2 run-instances
+--user-data file://...`):
 
 ```yaml
 #cloud-config
@@ -185,24 +127,11 @@ write_files:
     content: |
       SWARM_TOKEN=SWMTKN-1-<your-worker-token>
       SWARM_MANAGER=10.0.0.10:2377
-  - path: /etc/systemd/system/mke3-postjoin-reboot.service
-    permissions: '0644'
-    content: |
-      [Unit]
-      Description=Reboot once to activate xt_statistic after no-touch join
-      After=swarm-join.service
-      ConditionPathExists=!/var/lib/mke3/postjoin-reboot-done
-
-      [Service]
-      Type=oneshot
-      ExecStart=/bin/sh -c 'for i in $(seq 1 60); do [ -f /var/lib/mke3/joined ] && break; sleep 5; done; [ -f /var/lib/mke3/joined ] || exit 0; touch /var/lib/mke3/postjoin-reboot-done; lsmod | grep -q xt_statistic && exit 0; systemctl reboot'
 runcmd:
   - firewall-cmd --zone=trusted --add-interface=lo --permanent
   - firewall-cmd --zone=public --add-service=mke_worker_internal --permanent
   - firewall-cmd --zone=trusted --add-service=mke_worker_self --permanent
   - firewall-cmd --reload
-  - echo xt_statistic > /etc/modules-load.d/xt_statistic.conf
-  - systemctl enable --now mke3-postjoin-reboot.service
 ```
 
 On AWS, harden the instance metadata service so the token in user-data is not
@@ -260,7 +189,7 @@ node is broken. Don't block a batch, or start troubleshooting, on
 > configured yet. `mke-images.service` is ordered `Before=getty.target`
 > (`WantedBy=getty.target`), which places it ahead of `multi-user.target` in
 > the boot sequence — and `cloud-final.service` (the unit that runs
-> cloud-init's `runcmd`, i.e. the firewalld/`xt_statistic` steps above on
+> cloud-init's `runcmd`, i.e. the firewalld steps above on
 > cloud builds) depends on `multi-user.target`. `mke-images.service` loading
 > the baked-in product/controller image tars can take several minutes, so on
 > a freshly no-touch-joined node the kubelet/swarm-join path can report
@@ -342,3 +271,155 @@ standard process for all post-install additions.
 
 The `SWMTKN-1-<ca-hash>-<secret>` token embeds the cluster CA hash, so the
 joining node validates the manager's TLS certificate as part of the join.
+
+### What else should the provisioning payload include?
+
+The no-touch join adds the machine to the cluster and changes nothing else
+about it. Anything else the machine needs is applied by whatever provisions
+it, in the same kickstart `%post` or cloud-init configuration that carries
+the join credential.
+
+**Hardening.** For a cluster expected to be hardened, masking sshd and
+revoking the provisioning user's sudo belong here too — see [Does the
+joined machine end up hardened (sshd masked, sudo
+revoked)?](#does-the-joined-machine-end-up-hardened-sshd-masked-sudo-revoked).
+
+**Firewall rules.** A fresh machine's firewalld is active by default and
+ships only the `ssh`, `cockpit` and `dhcpv6-client` services — none of the
+cluster ports. The join itself still succeeds, being outbound-only, but the
+machine is unreachable for inbound gossip and overlay traffic until the
+firewall is opened. Two options:
+
+- Open the cluster ports, using the same zones and services a worker gets
+  from the installer's `tasks/mke-open-ports-tasks.yml` — `public` zone for
+  `mke_worker_internal`, `trusted` zone plus a trusted loopback interface
+  for `mke_worker_self`. `firewall-cmd --permanent` followed by
+  `firewall-cmd --reload` takes effect immediately; no reboot.
+- Disable firewalld, where a perimeter firewall already restricts the
+  equivalent ports. This is the no-touch equivalent of the installer's
+  `disable_firewalld` variable. That variable's value for the cluster has no
+  effect here — the installer never runs on this machine. In a kickstart
+  `%post`, or a cloud-init `runcmd`:
+
+  ```
+  systemctl disable --now firewalld
+  ```
+
+  Nothing pulls firewalld in with `Wants=`, so `disable` is enough; use
+  `mask` only to prevent a later `systemctl start`.
+
+Opening the [full post-join port set](#port-requirements), not just the
+join-minimum rows, avoids a second pass once the machine is carrying
+workloads.
+
+**Kernel modules.** The image preloads what MKE and Calico need. Any
+additional module a workload requires is written as a drop-in, one module
+name per line. In a kickstart `%post`:
+
+```
+cat > /etc/modules-load.d/site-extra.conf <<'EOF'
+nfs
+nfsv4
+EOF
+```
+
+As cloud-init, either the same line in `runcmd` or a `write_files` entry:
+
+```yaml
+write_files:
+  - path: /etc/modules-load.d/site-extra.conf
+    permissions: '0644'
+    content: |
+      nfs
+      nfsv4
+```
+
+`systemd-modules-load.service` loads the drop-in on every boot, before any
+`kernel.modules_disabled` setting applies.
+
+**When it takes effect differs by path.** A kickstart `%post` writes into
+the installed tree, so the module is loaded on the machine's *first* boot.
+Cloud-init does not: `write_files` and `runcmd` both run after
+`systemd-modules-load.service` has already finished, and creating the
+drop-in does not re-run it, so on the cloud path the module is loaded from
+the *second* boot onward. To have it on a cloud machine's first boot,
+either `modprobe <module>` alongside the `write_files` entry (possible
+where `kernel.modules_disabled` is `0`, as on current images), or reboot
+after the join. Under the lockdown, `modprobe` fails and a reboot is the
+only route.
+
+**systemd service changes.** Enabling, disabling or masking a unit
+(firewalld and sshd above, and anything else the machine's role needs) is
+part of the payload for the same reason: the join changes no unit except
+`swarm-join.service`, which disables itself on success. A kickstart `%post`
+can use `services --enabled=`/`--disabled=` in the main command section or
+`systemctl` against the installed tree; cloud-init `runcmd` runs
+`systemctl` against the live system, where `--now` avoids a reboot.
+Masking, rather than disabling, is required for any unit another unit pulls
+in with `Wants=` — see the hardening entry below for the sshd case.
+
+### Does the joined machine end up hardened (sshd masked, sudo revoked)?
+
+Only if the provisioning configuration does it. Hardening a machine is the
+responsibility of whoever provisions it, and belongs in the same kickstart
+`%post` or cloud-init configuration that carries the join credential. The
+no-touch mechanism joins the machine to the cluster and changes nothing else:
+`swarm-join.service` and `/usr/libexec/swarm-join` need neither sshd nor sudo,
+so hardening can be applied before, during or after the join without affecting
+it.
+
+For a cluster that is expected to be hardened, add both of the following to
+the provisioning configuration.
+
+Revoke the provisioning user's sudo, substituting the user your
+configuration creates:
+
+```
+gpasswd -d <provisioning-user> wheel 2>/dev/null || true
+gpasswd -d <provisioning-user> sudo 2>/dev/null || true
+sed -i '/^<provisioning-user>[[:space:]]/d' /etc/sudoers
+find /etc/sudoers.d/ -maxdepth 1 -type f \
+  -exec sed -i '/^<provisioning-user>[[:space:]]/d' {} \;
+```
+
+Disable SSH — mask rather than disable, and `--now` so no reboot is needed:
+
+```
+systemctl mask --now sshd
+```
+
+Notes:
+
+- **Mask, not disable.** On cloud images `cloud-init.service` carries
+  `Wants=sshd.service`, which activates a disabled unit on every boot; only a
+  masked unit stays inactive across reboots. See
+  [Harden MKE 3 Kubernetes](harden-mke3-kubernetes.md).
+- **No reboot is required.** In a kickstart `%post` the mask and the sudo
+  removal are written into the installed tree, so the machine's first boot is
+  already hardened. In cloud-init `runcmd`, `systemctl mask --now sshd` stops
+  the running daemon and installs the mask in the same call.
+- **Run both in a single elevated context, sudo revocation first.** Masking
+  sshd first drops an existing SSH session before the revocation can run;
+  revoking sudo first is safe, because the shell is already root and losing
+  `wheel` does not affect it.
+- Masking sshd before the join is confirmed leaves no shell access for
+  diagnosing a failed join. A one-shot `runcmd` test for
+  `/var/lib/mke3/joined` is not a usable gate: `cloud-final.service` can run
+  while the join is still retrying, find no sentinel, skip the hardening and
+  never run again. To keep a diagnosis window, install a unit ordered after
+  `swarm-join.service` that waits for the sentinel and hardens then, or
+  harden as a separate step once the machine reports `Ready` — in both cases
+  decide what happens to a machine whose join never succeeds.
+- Recovery, from the console or a
+  [node debug shell](node-debug-shell.md): `systemctl unmask sshd` then
+  `systemctl enable --now sshd` — unmasking alone leaves the daemon stopped.
+
+A configuration that also hardens the kernel by setting
+`kernel.modules_disabled = 1` locks the module subsystem once the sysctl
+applies, so any module loaded on demand after that point fails. Current
+images ship `0` in `/usr/lib/sysctl.d/20-secure-kernel-params.conf`; verify
+the live value with `sysctl kernel.modules_disabled` rather than assuming
+either setting. Under the lockdown, the image still preloads the modules MKE
+and Calico need, so it bites only a workload needing something else —
+preload it as described above.
+
