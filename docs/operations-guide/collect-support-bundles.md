@@ -251,10 +251,12 @@ deployment** — an operator using this destination is expected to point it at
 whatever storage the cluster already has. It is recorded here because the setup
 surfaced one fact about `bootc-mke3` nodes that applies to any NFS-backed claim.
 
-A stock node cannot mount NFS at all, despite the image shipping `nfs-utils`,
-`mount.nfs`, `rpcbind`, and the modules on disk: it sets
-`kernel.modules_disabled=1` and boots with only `sunrpc` loaded, so the NFS
-modules can never be loaded on demand. The mount error names what is missing:
+A stock node could not mount NFS at all when this was recorded, despite the
+image shipping `nfs-utils`, `mount.nfs`, `rpcbind`, and the modules on disk:
+it set `kernel.modules_disabled=1` and booted with only `sunrpc` loaded, so
+the NFS modules could not be loaded on demand. Current images ship
+`kernel.modules_disabled = 0`, which should allow on-demand loading; that
+has not been re-tested for NFS. The mount error names what is missing:
 
 | Modules loaded at boot | `mount.nfs` says |
 |---|---|
