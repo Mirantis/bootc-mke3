@@ -81,6 +81,8 @@ spec:
     mke3:
       upgradeFlags: ["--force-minimums"]
       backupDir: <backup-dir>                  # same dir used for the manual backup above
+      controllersUpgrade:
+        enabled: true                          # see callout below before omitting this
   controlPlaneConcurrency: 1
   workerConcurrency: <N>
 ```
@@ -94,6 +96,53 @@ spec:
   each role the controller drives through the upgrade steps at once. Manager
   nodes are always upgraded serially before workers start; workers proceed in
   batches of `workerConcurrency`.
+- `controllersUpgrade.enabled` gates a sixth, final step —
+  `mke3-controllers-upgrade` — that re-applies the System Upgrade Controller,
+  `machine-config-controller`, and `cluster-upgrade-controller` manifests
+  baked into the target OS image. **The CRD defaults this to `false`.**
+
+  > [!WARNING]
+  > **Leaving this unset silently skips upgrading your platform controllers.**
+  > `.status.phase` still reaches `Completed` with no error, mention, or
+  > degraded condition — there is nothing in a normal run's output that
+  > tells you the three controllers were left behind. Concretely: the OS
+  > image you just switched to stages newer SUC/`machine-config-controller`/
+  > `cluster-upgrade-controller` manifests on disk
+  > (`/usr/share/mke-controllers/manifests`), but without this field none of
+  > them are ever applied — the cluster keeps running whatever it was
+  > *installed* with, indefinitely, across any number of future OS/product
+  > upgrades, until some run finally sets it. Set it explicitly on every
+  > upgrade unless you manage these three controllers out-of-band (e.g. a
+  > separate Helm release process you control) and have deliberately decided
+  > this step should not touch them.
+  >
+  > It is also only visible to CRD versions new enough to know about it:
+  > the field first exists in `cluster-upgrade-controller` `v0.1.9-tp1`/
+  > `v0.2.0`. Applying it against an **older** pre-upgrade
+  > `cluster-upgrade-controller` does not error either — Kubernetes
+  > structural-schema pruning silently drops the whole block, `kubectl
+  > apply` succeeds, and the step still never runs. Confirm it was accepted
+  > immediately after applying, not after waiting out the whole upgrade:
+  > ```sh
+  > kubectl get clusterupgrade <name> \
+  >   -o jsonpath='{.spec.product.mke3.controllersUpgrade.enabled}'   # must print: true
+  > ```
+  > If it prints nothing, the pre-upgrade `cluster-upgrade-controller` is too
+  > old for this field — apply the baked SUC CRD/Deployment manifests by
+  > hand after the upgrade instead:
+  > ```sh
+  > kubectl apply -f /usr/share/mke-controllers/manifests/system-upgrade-controller-crd.yaml
+  > kubectl apply -f /usr/share/mke-controllers/manifests/system-upgrade-controller.yaml
+  > ```
+
+  This step runs **last**, after `mke3-upgrade` — every node has already
+  booted the target image by then, including the final act of the chain:
+  `cluster-upgrade-controller` replacing its own CRD/Deployment/RBAC via a
+  plain Kubernetes Job (deliberately not a SUC Plan, to avoid SUC watching
+  the very Job that replaces SUC's own CRD out from under it). It has **no
+  rollback counterpart** — a failure here is recorded as condition
+  `MKE3ControllersUpgradedRollbackUnsupported` rather than reverted; see
+  [Roll back a bootc-mke3 upgrade](rollback-bootc-mke3.md).
 - Apply with `kubectl apply -f <file>.yaml`.
 
 ### 3. Monitor progress
@@ -112,7 +161,9 @@ kubectl get pods -n system-upgrade
 
 `.status.phase` moves through `Upgrading` (with `.status.activeStep` naming
 the current step, e.g. `mke3-backup`, `bootc-os`, `mke3-verify-environment`,
-`mke3-upgrade`) to a terminal `Completed` or `Failed`.
+`mke3-upgrade`, `mke3-controllers-upgrade`) to a terminal `Completed` or
+`Failed`. `mke3-controllers-upgrade` only appears when
+`controllersUpgrade.enabled` was set.
 
 ## Expected Results
 
@@ -120,6 +171,20 @@ the current step, e.g. `mke3-backup`, `bootc-os`, `mke3-verify-environment`,
 - `kubectl get nodes` shows every node `Ready`.
 - The MKE UI/API and `docker version` report the target product version; if
   an OS image was specified, `bootc status` on each node shows it as booted.
+- **If `controllersUpgrade.enabled` was set**: `.status.conditions` includes
+  `MKE3ControllersUpgraded: "True"`, and the running images match what the
+  node now carries at `/usr/share/mke-controllers/versions.txt`:
+  ```sh
+  kubectl -n system-upgrade get deploy system-upgrade-controller \
+    -o jsonpath='{.spec.template.spec.containers[0].image}'
+  kubectl -n system-upgrade get deploy machine-config-controller \
+    -o jsonpath='{.spec.template.spec.containers[0].image}'
+  kubectl -n mke get deploy cluster-upgrade-controller \
+    -o jsonpath='{.spec.template.spec.containers[0].image}'
+  ```
+  `.status.phase: Completed` alone does not prove any of this — with the
+  field unset there is no such condition and the Deployments are simply
+  untouched, and `Completed` is reached either way.
 
 ## Rollback
 
@@ -133,7 +198,8 @@ the procedure.
 ## Where this is documented upstream
 
 Full step-by-step behavior of each upgrade step (`mke3-docker-config`,
-`mke3-backup`, `bootc-os`, `mke3-verify-environment`, `mke3-upgrade`), additional
+`mke3-backup`, `bootc-os`, `mke3-verify-environment`, `mke3-upgrade`,
+`mke3-controllers-upgrade`), additional
 scenarios (product-only upgrade, Docker daemon config distribution), and the
 `cluster-upgrade-controller` install procedure itself live in the
 [`cluster-upgrade-controller`](https://github.com/Mirantis/cluster-upgrade-controller)

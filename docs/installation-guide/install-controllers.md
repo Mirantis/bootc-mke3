@@ -28,7 +28,7 @@ their versions come from, and how to verify the result. It does not cover
 | Controller | Namespace | Purpose |
 |---|---|---|
 | System Upgrade Controller (SUC) | `system-upgrade` | Runs the per-node `Plan` jobs that `cluster-upgrade-controller` and `machine-config-controller` both drive. Install also patches it with a control-plane-only node affinity, a longer job active-deadline, and a privileged pod-security grant for its service account. |
-| `cluster-upgrade-controller` | `mke` | Reconciles `ClusterUpgrade` custom resources (whole-cluster OS + product upgrades). |
+| `cluster-upgrade-controller` | `mke` | Reconciles `ClusterUpgrade` custom resources (whole-cluster OS + product upgrades) and, when `spec.product.mke3.controllersUpgrade.enabled` is set on that CR, re-applies all three of these controllers' own manifests from the newer image an upgrade just switched to — see [`mke3-controllers-upgrade`](../operations-guide/upgrade-with-controller.md#2-apply-the-clusterupgrade-cr). |
 | `machine-config-controller` | `system-upgrade` (see note below) | Reconciles `MachineConfigChange` custom resources — see the [machine configuration runbook](../operations-guide/machine-config-operations.md). |
 
 `machine-config-controller`'s manifest renders most resources into the
@@ -132,6 +132,7 @@ fails.
 | Symptom | Likely cause | Remediation |
 |---|---|---|
 | `kubectl apply` on a `MachineConfigChange` (or `ClusterUpgrade`) fails `strict decoding error: unknown field ...` | The applied manifest's CRD is older than the CR you're submitting — you overrode `*_manifest` to a version whose CRD lags | Point the override at a manifest with a matching CRD, or drop the override to fall back to the node-fetched default |
+| A `ClusterUpgrade` CR's `spec.product.mke3.controllersUpgrade` was applied but the `mke3-controllers-upgrade` step never runs, with **no error at all** | The installed `cluster-upgrade-controller`'s CRD predates the field (it first exists in `v0.1.9-tp1`/`v0.2.0`) — structural-schema pruning drops the whole block silently; `kubectl apply` succeeds | Confirm with `kubectl get clusterupgrade <name> -o jsonpath='{.spec.product.mke3.controllersUpgrade.enabled}'` immediately after applying — empty output means it was pruned. Upgrade `cluster-upgrade-controller` first, or apply the baked SUC manifests by hand post-upgrade (see [upgrade runbook](../operations-guide/upgrade-with-controller.md#2-apply-the-clusterupgrade-cr)) |
 | A controller's pod image doesn't match `versions.txt` | The manifest source was overridden to a URL/mirror whose rendered image tag lags the image build | Remove the override (or point it at a manifest with the desired tag) and re-run; re-verify |
 | `machine-config-controller` deployment not found in namespace `mke` | Its manifest hardcodes `targetNamespace: system-upgrade` for the Deployment; look there instead | Not a fault — expected behavior |
 | Locked out of SSH and sudo on every node | `disable_sshd_after_install`/`revoke_sudo_after_install` ran during install, before the controller installs (see [install runbook](install-bootc-mke3.md#post-install-automation)) | Break-glass recovery below |
