@@ -79,10 +79,19 @@ The `plans` grant is the load-bearing entry: it is how a low-privilege controlle
 | `mke3-backup` | `docker run mirantis/ucp:<current> backup` → tar to host path | `spec.product.mke3.backupDir` (pattern-validated: `^/[A-Za-z0-9._/-]*$`) |
 | `etcd-maintenance` | runs `/upgrade-etcd-maint.sh` from an OCI artifact on control-plane nodes | `spec.product.mke4.etcdMaintenance{Image,ArtifactRef}` |
 | `mke`/`k0rdent` | patches `MkeRelease`/`Management` CRs; no direct node script | version strings only |
+| `mke3-controllers-upgrade` (`spec.product.mke3.controllersUpgrade`) | **Not a SUC Plan** — a plain `batch/v1` Job running the controller's own image as `/manager apply-manifests`, Server-Side-Applying `system-upgrade-controller-crd.yaml`, `system-upgrade-controller.yaml`, `machine-config-controller-manifest.yaml`, `cluster-upgrade-controller-manifest.yaml` from a node hostPath (`cluster-upgrade-controller/internal/manifestapply/apply.go`) with `Force: true` and `FieldManager: cluster-upgrade-controller` | Only a bool (`enabled`) and an admission-pattern-validated path (`manifestsDir`) — but the manifests it applies are baked image content, not spec-supplied, so the controllable surface here is "whether this runs," not "what it applies" |
 
-Existing mitigations the controller applies: image/path values are shell-quoted before interpolation (`internal/suc/plan.go:116-118`), one non-terminal `ClusterUpgrade` allowed cluster-wide (`internal/controller/clusterupgrade_controller.go:184-193`), control-plane upgrades serialized (`controlPlaneConcurrency` default 1) to preserve Swarm/etcd quorum, node drain before upgrade, idempotent/reboot-surviving scripts, finalizer-driven Plan cleanup on CR deletion.
-
-**Gaps**: `spec.product.mke3.image`, `upgradeFlags`, and `dockerDaemonConfig` are **not** validated against an allowlist or registry policy — only `os.image` and `backupDir` have regex constraints. There is no admission webhook; all validation is CRD-schema-level or in-reconciler (post-admission).
+`mke3-controllers-upgrade`'s blast radius differs qualitatively from every
+other row: it is the only step whose action is a Kubernetes API write
+(CRD/RBAC/Deployment replacement cluster-wide) rather than a node-local
+script, and it is the only step that replaces the identity
+(ServiceAccount/RBAC) of the very controller executing it and of SUC, the
+controller every other step's Plans depend on. `Force: true` SSA will
+overwrite any manual or Helm-managed changes to these three
+controllers' objects with field ownership `cluster-upgrade-controller` —
+relevant if an operator manages any of the three out-of-band (see the
+[upgrade runbook](upgrade-with-controller.md#2-apply-the-clusterupgrade-cr)'s
+callout on `controllersUpgrade.enabled`).
 
 ### 2.4 Secrets, network, logging
 
