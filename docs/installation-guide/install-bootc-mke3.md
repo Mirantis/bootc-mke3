@@ -15,6 +15,11 @@ Ansible's control node cannot run natively on Windows — if your workstation is
    static Kubernetes manifests applied with a local `kubectl`
    (`ansible/tasks/cluster-upgrade-controller-tasks.yml`,
    `ansible/tasks/machine-config-controller-tasks.yml`). No `helm` needed.
+4. `python3` 3.6 or newer on the Ansible controller's `PATH`. The post-install
+   play runs `ansible/tasks/helpers/suc_priv_grant.py` with a bare `python3`
+   (`ansible/tasks/suc-priv-grant-tasks.yml`), and the script uses f-strings.
+   This is the `python3` the Ansible user resolves, which can differ from the
+   interpreter Ansible itself runs under (`ansible --version`).
 
 ### bootc-mke3 component configuration
 
@@ -76,3 +81,47 @@ lookup('file', '/usr/test/bootc-mke3-install/mke-config.toml') }}"` in your
 vars file — assigning a bare path string writes that string into
 `/etc/docker/mke-config.toml` instead of your TOML. For the minimum version
 of the TOML file check [mke-config-min.toml.example](../examples/mke-config-min.toml.example). For complete list of toml config options check https://docs.mirantis.com/mke/3.9/ops/administer-cluster/configure-an-mke-cluster/configuration-options.html
+
+### Post-install fails with `Status code was -1 ... Request failed: <urlopen error timed out>`
+The "Authenticate to MKE and obtain a short-lived auth token" task
+(`ansible/tasks/mke-client-bundle-tasks.yml`) and the later MKE API calls run
+from the Ansible **controller** (`delegate_to: localhost`), not from a manager.
+Status `-1` means no HTTP response was received at all. If the controller sits
+behind a corporate proxy (`http_proxy`/`https_proxy` set in its environment),
+Ansible's `uri` module sends these requests through the proxy, which usually
+cannot reach the MKE address, so they time out even though the install over
+SSH worked. `kubectl` honours the same variables.
+
+Check with `env | grep -i proxy`, then exclude the MKE address from proxying
+for the Ansible run. Use the exact `mke_url` value (hostname or IP) and the
+manager hostnames; `no_proxy` entries do not support CIDR ranges here:
+```bash
+export no_proxy="$no_proxy,<mke_url>,<manager1>,<manager2>,<manager3>"
+export NO_PROXY="$no_proxy"
+cd ansible
+ansible-playbook -i <path-to-your-inventory> mke-install-playbook.yml
+```
+To confirm the path independently of Ansible:
+`curl -vk --noproxy '*' -m 10 https://<mke_url>/_ping`.
+
+Note that the login and download tasks use `no_log: true`, so the underlying
+error is censored unless `no_log` is temporarily set to `false` while
+debugging (revert it afterwards: the task arguments contain the admin
+password). Reproducing the call with `curl -v` from the controller avoids
+editing the playbook.
+
+### Post-install fails with `SyntaxError: invalid syntax` in `suc_priv_grant.py`
+The "Merge SUC privilege grant into MKE cluster config" task runs
+`python3 ansible/tasks/helpers/suc_priv_grant.py` on the controller, and the
+script uses f-strings (e.g. line 54, `_format_str_array`). A `python3` older than
+3.6 reports a plain `SyntaxError: invalid syntax` on that line. The version
+that matters is the one the Ansible user's `PATH` resolves for `python3`, not
+necessarily the one reported by `ansible --version` or by a different shell:
+```bash
+command -v python3
+python3 -c 'import sys; print(sys.executable, sys.version)'
+python3 -c "v='a'; print(f'\"{v}\"')"   # must print "a" with quotes
+```
+Put a Python 3.6+ interpreter first in `PATH` for the run, or point the task at
+it explicitly. The post-install play is idempotent, so it can be re-run after
+the fix.
