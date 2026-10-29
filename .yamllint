@@ -1,0 +1,42 @@
+---
+# yamllint configuration. Run locally with `yamllint .` -- CI runs the same
+# command (.github/workflows/lint.yml). Errors fail the run; warnings are
+# reported but advisory.
+extends: default
+
+rules:
+  # Ansible, cloud-init, rpm-ostree treefiles and GitHub workflows in this
+  # repo do not open with `---`; requiring it would be pure noise.
+  document-start: disable
+
+  # Long shell one-liners and URLs are normal here, so this is advisory.
+  line-length:
+    max: 160
+    allow-non-breakable-words: true
+    allow-non-breakable-inline-mappings: true
+    level: warning
+
+  # `on:` in GitHub workflows is a key, not a boolean. Only true/false are
+  # accepted as values (rejects the YAML 1.1 footguns yes/no/on/off).
+  truthy:
+    allowed-values: ["true", "false"]
+    check-keys: false
+
+  # One space before an inline comment matches the SHA-pin convention used in
+  # the workflows (`uses: ...@<sha> # v4.4.0`).
+  comments:
+    min-spaces-from-content: 1
+
+  # Allow `{ name: x, content: y }` flow mappings (common Ansible style).
+  braces:
+    min-spaces-inside: 0
+    max-spaces-inside: 1
+
+ignore: |
+  # Terraform templatefile() inputs: they contain ${...} / %{...} directives
+  # and a mandatory `#cloud-config` first line, so they are not plain YAML.
+  /terraform/vsphere/helpers/cloudinit/
+  # cloud-init user-data must carry `#cloud-config` verbatim on line 1.
+  *.cloud-init.yaml
+  # Generated MKE client bundle (TLS keys, kubeconfig); gitignored.
+  /ansible/mke-bundle/
