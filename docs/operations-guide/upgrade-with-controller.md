@@ -184,6 +184,13 @@ pullable from wherever the cluster's nodes read images from — see
 `cluster-upgrade-controller` reuses its own image to run the `mke3-upgrade`
 step; there is no separate `spec.product.mke3.image` field to configure.
 
+On an air-gapped cluster, also confirm that
+`SYSTEM_UPGRADE_JOB_IMAGE_PULL_POLICY` in `system-upgrade/default-controller-env`
+is not `Always`. Images built before 2026-10-29 ship it as `Always`, which
+makes SUC create every step's Job with `imagePullPolicy: Always` and sends the
+kubelet to the registry even for images already on the node — see
+[Older images: SUC Job pull policy](../installation-guide/airgap-bootc-mke3.md#older-images-suc-job-pull-policy).
+
 If `spec.os.image` is set, verify its cosign signature before applying the
 CR — see
 [Verify bootc-mke3 image signatures](verify-image-signatures.md#at-installswitch-time).
