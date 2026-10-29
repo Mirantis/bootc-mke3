@@ -1,3 +1,23 @@
+- name: Validate MKE admin credentials
+  hosts: localhost
+  gather_facts: false
+  vars_files:
+    - vars/mke-creds.yml
+  pre_tasks:
+    # Fail before any host is touched. No defaults exist in vars/mke-creds.yml.
+    - name: Assert admin_user and admin_pass are defined and admin_pass is long enough
+      ansible.builtin.assert:
+        that:
+          - admin_user is defined
+          - admin_user | string | length > 0
+          - admin_pass is defined
+          - admin_pass | string | length >= 8
+        fail_msg: >-
+          MKE admin credentials are not set or too weak. Define admin_user
+          (non-empty) and admin_pass (at least 8 characters) in
+          vars/mke-creds.yml or via -e admin_user=... -e admin_pass=...
+        quiet: true
+
 - name: Write Docker daemon config file to remote hosts
   ansible.builtin.import_playbook: mcr-setup-docker.yml
 

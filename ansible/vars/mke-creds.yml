@@ -1,2 +1,10 @@
-admin_user: "admin"
-admin_pass: "password"
+# MKE administrator credentials. Deliberately left undefined: there is no safe
+# default. mke-install-playbook.yml fails in its first play until both are set.
+#
+# Set them here, or pass them on the command line:
+#   ansible-playbook ... -e admin_user=<name> -e admin_pass=<password>
+#
+# admin_user: "<MKE admin username>"
+# admin_pass: "<MKE admin password, at least 8 characters>"
+#
+# Do not commit real credentials. Prefer `ansible-vault encrypt_string` or -e.

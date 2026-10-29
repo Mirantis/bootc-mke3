@@ -27,6 +27,11 @@
 - name: Get target MKE version
   ansible.builtin.include_tasks: tasks/helpers/get_target_mke_version.yml
 
+# no_log: the command line carries --admin-password, which Ansible would
+# otherwise print in the task result (cmd) on failure. Side effect: the failure
+# detail (stderr/rc) is censored too; to debug, run the same `docker run ...
+# install` by hand on a manager, or temporarily set no_log: false (revert after).
+#
 # async+poll (not a plain synchronous command): this is a single foreground
 # `docker run` with no output for several minutes while it pulls images and
 # installs. A synchronous command holds one SSH connection open and silent
@@ -41,13 +46,14 @@
 - name: Install MKE
   ansible.builtin.command: >
     docker run --rm --security-opt label=disable -v /var/run/docker.sock:/var/run/docker.sock
-    mirantis/ucp:{{ target_mke_version.stdout }} install --admin-username {{ admin_user }} --admin-password {{ admin_pass }}
+    mirantis/ucp:{{ target_mke_version.stdout }} install --admin-username {{ admin_user | quote }} --admin-password {{ admin_pass | quote }}
     {{ mke_install_flags | join(' ') }}
 
   when: swarm_status.stdout == 'active' and mke_installed.stdout | length == 0
   run_once: true
   async: "{{ mke_install_timeout }}"
   poll: 15
+  no_log: true
 
 - name: Get MKE status
   ansible.builtin.include_tasks: tasks/helpers/mke_status.yml
