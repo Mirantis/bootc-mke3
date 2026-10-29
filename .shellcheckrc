@@ -1,0 +1,11 @@
+# ShellCheck configuration, picked up automatically by `shellcheck` run from
+# anywhere inside this repository (and by CI, .github/workflows/lint.yml).
+#
+# Follow `source ./lib.sh` so sourced helpers are analysed with their callers
+# instead of raising SC1091 for every script that sources one.
+external-sources=true
+source-path=SCRIPTDIR
+#
+# `severity` cannot be set here (ShellCheck ignores it in rc files); CI passes
+# --severity=warning, so only errors and warnings fail the build and
+# style/info notes stay advisory.
