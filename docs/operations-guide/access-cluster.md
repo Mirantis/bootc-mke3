@@ -14,7 +14,8 @@ authenticated and authorized as the MKE user that downloaded the bundle.
 
 1. A running MKE 3 cluster and its URL (`mke_url` in the ansible inventory).
 2. MKE user credentials. Admin credentials are configured at install time in
-   `ansible/vars/mke-creds.yml` (default `admin`/`password` — see the
+   `ansible/vars/mke-creds.yml` or passed with `-e admin_user=... -e admin_pass=...`
+   (no default; see the
    [installation runbook](../installation-guide/install-bootc-mke3.md)).
 3. On your workstation: `kubectl` and/or the `docker` CLI; `curl`, `jq`, and
    `unzip` for the API download path.

@@ -23,12 +23,21 @@ Ansible's control node cannot run natively on Windows — if your workstation is
 
 ### bootc-mke3 component configuration
 
-By default, admin user credentials for MKE UI are `admin/password`. If you want to configure admin user credentials for MKE, please change them in `ansible/vars/mke-creds.yml` file.
+There are no default MKE admin credentials. `admin_user` and `admin_pass` are intentionally left undefined in `ansible/vars/mke-creds.yml`, and you must supply them before installing. The first play of `mke-install-playbook.yml` ("Validate MKE admin credentials") asserts that `admin_user` is defined and non-empty and that `admin_pass` is defined and at least 8 characters long. If it is not, the run fails before any host is modified. Both values may contain spaces, quotes and shell metacharacters; they are shell-quoted when passed to `mke install`.
+
+Set them either by uncommenting and editing the two lines in `ansible/vars/mke-creds.yml`, or on the command line (keeps the password out of the working tree):
+
+```bash
+ansible-playbook -i <path-to-your-inventory> mke-install-playbook.yml \
+  -e admin_user=<username> -e admin_pass=<password-of-8-or-more-characters>
+```
+
+Do not commit real credentials; consider `ansible-vault encrypt_string` for the password.
 
 ## Procedure
 
 1. Ensure expected ansible inventory exists. See [inventory description document](ansible-inventory-input.md) for more details.
-2. To override any default values, specify the desired values in the `vars/common-vars.yml` and `vars/mke-creds.yml` files
+2. Set `admin_user` and `admin_pass` (required, see above) in `vars/mke-creds.yml` or via `-e`. To override any other default values, specify the desired values in `vars/common-vars.yml`
 3. Optionally: You can set the MCR and MKE licenses via the `mcr_license` and `mke_license` variables respectively.
 4. Run ansible from the `ansible/` directory, so `ansible.cfg` (which sets
    `host_key_checking = false`, required for fresh hosts whose SSH host keys
