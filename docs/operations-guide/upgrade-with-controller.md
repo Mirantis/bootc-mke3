@@ -24,14 +24,16 @@ No SSH and no Ansible inventory are required — only `kubectl` access via the
    ```sh
    sudo mkdir -p <backup-dir> && sudo chmod o+w <backup-dir>
    docker run --rm --log-driver none \
+     --security-opt label=disable \
      -v /var/run/docker.sock:/var/run/docker.sock \
      -v <backup-dir>:/backup \
      mirantis/ucp:<current-version> backup --no-passphrase --file <name>.tar
    ```
 
    The container writes as a non-root uid, hence the `chmod o+w` on the host
-   backup directory. This is required regardless of which upgrade mechanism
-   you use.
+   backup directory. `--security-opt label=disable` is required: Rocky 9 bootc
+   enforces SELinux, which otherwise denies the container access to the Docker
+   socket. This is required regardless of which upgrade mechanism you use.
 2. `cluster-upgrade-controller` installed in the cluster — installed by
    default as part of a standard [install](../installation-guide/install-bootc-mke3.md).
 3. A [client bundle](access-cluster.md) with `kubectl` configured against the
