@@ -1,10 +1,9 @@
 name: Ansible Lint
 
-# Advisory only (PRODENG-3661): runs on every PR touching ansible/ content and
-# reports findings in the job log, but `continue-on-error` on the lint step
-# means this check never fails a PR. The ansible/ tree has a 127-finding
-# backlog at the `basic` profile (see .ansible-lint); promote this to a
-# required, blocking check once that backlog is worked down.
+# Blocking: runs on every PR touching ansible/ content and fails the PR on any
+# finding at the `basic` profile (see .ansible-lint). The tree passes clean —
+# 0 failures, 0 warnings — so any failure here is a regression introduced by
+# the PR under test.
 on:
   pull_request:
     paths:
@@ -32,13 +31,5 @@ jobs:
       - name: Install ansible-lint
         run: pip install ansible-lint==26.8.0
 
-      - name: Run ansible-lint (advisory)
-        id: lint
-        continue-on-error: true
+      - name: Run ansible-lint
         run: ansible-lint ansible/
-
-      - name: Report advisory status
-        run: |
-          if [ "${{ steps.lint.outcome }}" = "failure" ]; then
-            echo "::warning::ansible-lint found issues (see job log) — advisory only, not blocking this PR."
-          fi
