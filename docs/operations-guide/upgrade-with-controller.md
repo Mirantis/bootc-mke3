@@ -274,12 +274,27 @@ spec:
   > missing-path error. Copy them off a node first. This needs no SSH
   > (managers revoke it after install) because `kubectl debug node` runs a
   > pod with the host filesystem mounted at `/host`; `--attach=true` is
-  > required or the command returns no output:
+  > required or the command returns no output.
+  >
+  > `DEBUG_IMAGE` below is operator-supplied, because the right image
+  > depends on the environment. It must be pullable on that cluster — or
+  > already present on the node — and must contain both a shell and
+  > `chroot`. `busybox` satisfies this wherever the cluster can reach a
+  > public registry, which is what CI uses. **On an air-gapped cluster
+  > `busybox` will not pull**, leaving the debug pod in `ImagePullBackOff`
+  > before any manifest is copied; substitute an image already preloaded on
+  > the nodes. A distroless image will not work — it has neither a shell
+  > nor `chroot`.
+  >
+  > The namespace must permit a privileged pod with a host mount. The run
+  > this procedure is derived from used `-n default` with the MKE admin
+  > client bundle.
   > ```sh
+  > DEBUG_IMAGE=busybox   # see the requirements above before using this on an air-gapped cluster
   > NODE=$(kubectl get nodes -l node-role.kubernetes.io/master -o name | head -1 | cut -d/ -f2)
   > for m in system-upgrade-controller-crd system-upgrade-controller \
   >          machine-config-controller-manifest cluster-upgrade-controller-manifest; do
-  >   kubectl -n default debug "node/${NODE}" --image=busybox --quiet --attach=true -- \
+  >   kubectl -n default debug "node/${NODE}" --image="${DEBUG_IMAGE}" --quiet --attach=true -- \
   >     chroot /host cat "/usr/share/mke-controllers/manifests/${m}.yaml" > "${m}.yaml"
   > done
   > ```
@@ -381,16 +396,39 @@ one staged in the target image, so a cluster that jumps straight to the
 SUC v0.20.2 release performs the apply with the old controller and hits
 the failure above. Shipping both in one image does not avoid it.
 
-**Recovery for a cluster that hit the failure.** Remove the orphaned
-field, then re-apply the `ClusterUpgrade`:
+**Recovery for a cluster that hit the failure.** Set the strategy type and
+remove the orphaned field in a *single* patch, then re-apply the
+`ClusterUpgrade`:
 
 ```sh
 kubectl patch deploy -n system-upgrade system-upgrade-controller --type=json \
-  -p '[{"op":"remove","path":"/spec/strategy/rollingUpdate"}]'
+  -p '[{"op":"remove","path":"/spec/strategy/rollingUpdate"},
+       {"op":"replace","path":"/spec/strategy/type","value":"Recreate"}]'
+```
+
+Both operations are required, and in one patch. Removing `rollingUpdate`
+while leaving `type: RollingUpdate` does not help: `rollingUpdate` is
+defaulted whenever the type is `RollingUpdate`, so the API server
+repopulates the block — which is how it came to exist in the first place,
+from v0.14.0's strategy-less manifest — and the next apply fails
+identically. A JSON patch applies as a unit, so the object never passes
+through that state. Setting `type: Recreate` leaves nothing to default,
+because `rollingUpdate` is only defaulted for `RollingUpdate`.
+
+Confirm the result before re-applying anything:
+
+```sh
+kubectl -n system-upgrade get deploy system-upgrade-controller \
+  -o jsonpath='{.spec.strategy}'   # must print: {"type":"Recreate"}
 ```
 
 `kubectl apply` is not a workaround on its own: client-side apply also
 retains the defaulted field.
+
+This recovery procedure has **not been exercised on a live cluster**. The
+upgrade path itself has — see the verification recorded on PRODENG-3820 —
+but that run used a controller already carrying the fix and never needed
+this patch.
 
 ## Rollback
 
