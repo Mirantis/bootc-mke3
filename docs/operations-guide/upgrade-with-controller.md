@@ -317,6 +317,49 @@ the current step, e.g. `mke3-backup`, `bootc-os`, `mke3-verify-environment`,
   field unset there is no such condition and the Deployments are simply
   untouched, and `Completed` is reached either way.
 
+## System Upgrade Controller v0.14.0 → v0.20.2
+
+Images that pin System Upgrade Controller (SUC) v0.20.2 cannot have that
+manifest applied over a cluster still running v0.14.0 by a
+`cluster-upgrade-controller` older than the fix described below. The
+`mke3-controllers-upgrade` step fails and the whole `ClusterUpgrade`
+reaches `Failed`:
+
+```
+applying /manifests/system-upgrade-controller.yaml
+(Deployment system-upgrade/system-upgrade-controller):
+Deployment.apps "system-upgrade-controller" is invalid:
+spec.strategy.rollingUpdate: Forbidden: may not be specified
+when strategy `type` is 'Recreate'
+```
+
+Cause: the v0.14.0 manifest sets no `spec.strategy`, so the API server
+defaults the live Deployment to `RollingUpdate` with a populated
+`rollingUpdate` block. The v0.20.2 manifest sets `type: Recreate` and no
+`rollingUpdate` key. Server-Side Apply changes the type but cannot remove
+the defaulted block, which is owned by whichever client applied v0.14.0,
+so the merged object is rejected. Fresh installs of v0.20.2 are
+unaffected — there is no pre-existing Deployment to merge against.
+
+**Upgrade order.** Upgrade to a release carrying the fixed
+`cluster-upgrade-controller` *before* upgrading to a release that pins SUC
+v0.20.2. The `mke3-controllers-upgrade` Job runs the
+`cluster-upgrade-controller` image already running on the cluster, not the
+one staged in the target image, so a cluster that jumps straight to the
+SUC v0.20.2 release performs the apply with the old controller and hits
+the failure above. Shipping both in one image does not avoid it.
+
+**Recovery for a cluster that hit the failure.** Remove the orphaned
+field, then re-apply the `ClusterUpgrade`:
+
+```sh
+kubectl patch deploy -n system-upgrade system-upgrade-controller --type=json \
+  -p '[{"op":"remove","path":"/spec/strategy/rollingUpdate"}]'
+```
+
+`kubectl apply` is not a workaround on its own: client-side apply also
+retains the defaulted field.
+
 ## Rollback
 
 If `.status.phase` reaches `Failed` instead, the same CR can revert the
