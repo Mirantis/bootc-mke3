@@ -32,6 +32,24 @@ rules:
     min-spaces-inside: 0
     max-spaces-inside: 1
 
+  # The three settings below are required for compatibility with
+  # ansible-lint's own yamllint integration (_validate_yamllint_compatibility
+  # in ansiblelint/yaml_utils.py). Without them ansible-lint reports this file
+  # as incompatible and disables fix mode, and its yaml rule runs degraded.
+  # comments.min-spaces-from-content: 1 and the braces values above are also
+  # part of that requirement and already comply.
+  #
+  # ansible-lint handles comment indentation itself; yamllint's check conflicts
+  # with it, so it must be disabled here.
+  comments-indentation: disable
+
+  # Reject implicit (`0644`) and explicit (`0o644`) octal scalars: YAML 1.1
+  # parses `0644` as octal and YAML 1.2 as the integer 644, so an unquoted file
+  # mode means different things to different parsers. Quote them instead.
+  octal-values:
+    forbid-implicit-octal: true
+    forbid-explicit-octal: true
+
 ignore: |
   # Terraform templatefile() inputs: they contain ${...} / %{...} directives
   # and a mandatory `#cloud-config` first line, so they are not plain YAML.
