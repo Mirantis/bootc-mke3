@@ -255,22 +255,10 @@ spec:
   > and the controller upgrade to land in separate change windows, or when
   > you want to keep a known-good controller version across a product bump.
   >
-  > It is also only visible to CRD versions new enough to know about it:
-  > the field first exists in `cluster-upgrade-controller` `v0.1.9-tp1`/
-  > `v0.2.0`. What an **older** pre-upgrade `cluster-upgrade-controller`
-  > does with it depends on the client's field-validation mode, so neither
-  > outcome should be assumed:
-  >
-  > | `kubectl apply --validate` | Result |
-  > |---|---|
-  > | `strict` (the default since kubectl 1.27) | the apply is **rejected** with an unknown-field error, and nothing is created |
-  > | `warn` | the apply succeeds with a warning; the block is dropped |
-  > | `ignore` / `false`, or a pre-1.25 client | the apply succeeds **silently** and the block is dropped |
-  >
-  > In the last two cases the step never runs even though the apply
-  > reported success. Confirm the field was accepted immediately after
-  > applying, not after waiting out the whole upgrade — this check is
-  > correct in every mode:
+  > The field requires `cluster-upgrade-controller` `v0.1.9-tp1`/`v0.2.0` or
+  > later — it does not exist in earlier CRDs. Confirm it was accepted
+  > immediately after applying, rather than after waiting out the whole
+  > upgrade:
   > ```sh
   > kubectl get clusterupgrade <name> \
   >   -o jsonpath='{.spec.product.mke3.controllersUpgrade.enabled}'   # must print: true
