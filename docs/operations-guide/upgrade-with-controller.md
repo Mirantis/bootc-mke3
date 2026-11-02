@@ -212,6 +212,8 @@ spec:
     mke3:
       upgradeFlags: ["--force-minimums"]
       backupDir: <backup-dir>                  # same dir used for the manual backup above
+      controllersUpgrade:
+        enabled: true                          # see callout below before omitting this
   controlPlaneConcurrency: 1
   workerConcurrency: <N>
 ```
@@ -225,6 +227,103 @@ spec:
   each role the controller drives through the upgrade steps at once. Manager
   nodes are always upgraded serially before workers start; workers proceed in
   batches of `workerConcurrency`.
+- `controllersUpgrade.enabled` gates a sixth, final step —
+  `mke3-controllers-upgrade` — that re-applies the System Upgrade Controller,
+  `machine-config-controller`, and `cluster-upgrade-controller` manifests
+  baked into the target OS image. **The CRD defaults this to `false`, by
+  design**: the step replaces cluster-wide CRDs, RBAC and Deployments,
+  including `cluster-upgrade-controller`'s own, so it is opt-in per upgrade
+  rather than something a CR acquires implicitly.
+
+  > [!NOTE]
+  > **With the field unset, the controllers are not upgraded and nothing
+  > records that.** `.status.phase` reaches `Completed`, no condition is
+  > set, and no log line reports the step being skipped — the absence of
+  > `MKE3ControllersUpgraded` in `.status.conditions` is the only signal.
+  > The target OS image stages newer SUC/`machine-config-controller`/
+  > `cluster-upgrade-controller` manifests on disk
+  > (`/usr/share/mke-controllers/manifests`); with the field unset none of
+  > them are applied, and the cluster keeps running the versions it was
+  > *installed* with across any number of later OS or product upgrades
+  > until an upgrade sets the field.
+  >
+  > **Set it to `true`** when you want the platform controllers to track the
+  > OS image — which is the normal case for a cluster whose controllers were
+  > installed from these images and are not managed elsewhere. **Leave it
+  > unset or `false`** when you manage any of the three out-of-band (a
+  > separate Helm release, for example), when you need the product upgrade
+  > and the controller upgrade to land in separate change windows, or when
+  > you want to keep a known-good controller version across a product bump.
+  >
+  > The field requires `cluster-upgrade-controller` `v0.1.9-tp1`/`v0.2.0` or
+  > later — it does not exist in earlier CRDs. Confirm it was accepted
+  > immediately after applying, rather than after waiting out the whole
+  > upgrade:
+  > ```sh
+  > kubectl get clusterupgrade <name> \
+  >   -o jsonpath='{.spec.product.mke3.controllersUpgrade.enabled}'   # must print: true
+  > ```
+  > If it prints nothing, the pre-upgrade `cluster-upgrade-controller` is too
+  > old for this field. Upgrade the three controllers by hand after the
+  > product upgrade instead, using the manifests the new OS image staged on
+  > each node.
+  >
+  > These manifests live at `/usr/share/mke-controllers/manifests` **on the
+  > nodes**, not on your workstation, and `kubectl apply -f` reads the
+  > client's filesystem — pointing it at that path fails with a
+  > missing-path error. Copy them off a node first. This needs no SSH
+  > (managers revoke it after install) because `kubectl debug node` runs a
+  > pod with the host filesystem mounted at `/host`; `--attach=true` is
+  > required or the command returns no output.
+  >
+  > **Prerequisite.** `DEBUG_IMAGE` has no default and must be set
+  > explicitly: the image must already be present on the node, or
+  > pullable by that cluster, *before* this procedure starts, and must
+  > contain both a shell and `chroot`. A distroless image will not work —
+  > it has neither. On a cluster with public registry access `busybox` is
+  > sufficient, and is what CI uses. **On an air-gapped cluster `busybox`
+  > will not pull**: the debug pod sits in `ImagePullBackOff` before any
+  > manifest is copied, so an air-gapped cluster must mirror a suitable
+  > image into its own registry or use one already preloaded on the nodes.
+  > Establish which image that is for your environment before you begin;
+  > this runbook does not name one, because whether a given image carries
+  > a shell and `chroot` has to be checked rather than assumed.
+  >
+  > The namespace must permit a privileged pod with a host mount. The run
+  > this procedure is derived from used `-n default` with the MKE admin
+  > client bundle.
+  > ```sh
+  > : "${DEBUG_IMAGE:?set DEBUG_IMAGE to an image available to this cluster, carrying a shell and chroot}"
+  > NODE=$(kubectl get nodes -l node-role.kubernetes.io/master -o name | head -1 | cut -d/ -f2)
+  > for m in system-upgrade-controller-crd system-upgrade-controller \
+  >          machine-config-controller-manifest cluster-upgrade-controller-manifest; do
+  >   kubectl -n default debug "node/${NODE}" --image="${DEBUG_IMAGE}" --quiet --attach=true -- \
+  >     chroot /host cat "/usr/share/mke-controllers/manifests/${m}.yaml" > "${m}.yaml"
+  > done
+  > ```
+  > Then apply all four — applying only the SUC pair leaves
+  > `machine-config-controller` and `cluster-upgrade-controller` on their old
+  > versions, including an outdated `ClusterUpgrade` CRD. The
+  > `cluster-upgrade-controller` manifest sets no `metadata.namespace`, so it
+  > needs `--namespace` explicitly or it lands in `default` (compare
+  > `ansible/tasks/cluster-upgrade-controller-tasks.yml`):
+  > ```sh
+  > kubectl apply -f system-upgrade-controller-crd.yaml
+  > kubectl apply -f system-upgrade-controller.yaml
+  > kubectl apply -f machine-config-controller-manifest.yaml
+  > kubectl apply --namespace mke -f cluster-upgrade-controller-manifest.yaml
+  > ```
+  > Applying `cluster-upgrade-controller`'s own manifest replaces the
+  > controller performing the upgrade; do it last, as the step itself does.
+
+  This step runs **last**, after `mke3-upgrade` — every node has already
+  booted the target image by then, including the final act of the chain:
+  `cluster-upgrade-controller` replacing its own CRD/Deployment/RBAC via a
+  plain Kubernetes Job (deliberately not a SUC Plan, to avoid SUC watching
+  the very Job that replaces SUC's own CRD out from under it). It has **no
+  rollback counterpart** — a failure here is recorded as condition
+  `MKE3ControllersUpgradedRollbackUnsupported` rather than reverted; see
+  [Roll back a bootc-mke3 upgrade](rollback-bootc-mke3.md).
 - Apply with `kubectl apply -f <file>.yaml`.
 
 ### 4. Monitor progress
@@ -243,7 +342,9 @@ kubectl get pods -n system-upgrade
 
 `.status.phase` moves through `Upgrading` (with `.status.activeStep` naming
 the current step, e.g. `mke3-backup`, `bootc-os`, `mke3-verify-environment`,
-`mke3-upgrade`) to a terminal `Completed` or `Failed`.
+`mke3-upgrade`, `mke3-controllers-upgrade`) to a terminal `Completed` or
+`Failed`. `mke3-controllers-upgrade` only appears when
+`controllersUpgrade.enabled` was set.
 
 ## Expected Results
 
@@ -251,6 +352,105 @@ the current step, e.g. `mke3-backup`, `bootc-os`, `mke3-verify-environment`,
 - `kubectl get nodes` shows every node `Ready`.
 - The MKE UI/API and `docker version` report the target product version; if
   an OS image was specified, `bootc status` on each node shows it as booted.
+- **If `controllersUpgrade.enabled` was set**: `.status.conditions` includes
+  `MKE3ControllersUpgraded: "True"`, and the running images match what the
+  node now carries at `/usr/share/mke-controllers/versions.txt`:
+  ```sh
+  kubectl -n system-upgrade get deploy system-upgrade-controller \
+    -o jsonpath='{.spec.template.spec.containers[0].image}'
+  kubectl -n system-upgrade get deploy machine-config-controller \
+    -o jsonpath='{.spec.template.spec.containers[0].image}'
+  kubectl -n mke get deploy cluster-upgrade-controller \
+    -o jsonpath='{.spec.template.spec.containers[0].image}'
+  ```
+  `.status.phase: Completed` alone does not prove any of this — with the
+  field unset there is no such condition and the Deployments are simply
+  untouched, and `Completed` is reached either way.
+
+## System Upgrade Controller v0.14.0 → v0.20.2
+
+Images that pin System Upgrade Controller (SUC) v0.20.2 cannot have that
+manifest applied over a cluster still running v0.14.0 by a
+`cluster-upgrade-controller` older than the fix described below. The
+`mke3-controllers-upgrade` step fails and the whole `ClusterUpgrade`
+reaches `Failed`:
+
+```
+applying /manifests/system-upgrade-controller.yaml
+(Deployment system-upgrade/system-upgrade-controller):
+Deployment.apps "system-upgrade-controller" is invalid:
+spec.strategy.rollingUpdate: Forbidden: may not be specified
+when strategy `type` is 'Recreate'
+```
+
+Cause: the v0.14.0 manifest sets no `spec.strategy`, so the API server
+defaults the live Deployment to `RollingUpdate` with a populated
+`rollingUpdate` block. The v0.20.2 manifest sets `type: Recreate` and no
+`rollingUpdate` key. Server-Side Apply changes the type but cannot remove
+the defaulted block, which is owned by whichever client applied v0.14.0,
+so the merged object is rejected. Fresh installs of v0.20.2 are
+unaffected — there is no pre-existing Deployment to merge against.
+
+**Upgrade order.** Upgrade to a release carrying the fixed
+`cluster-upgrade-controller` *before* upgrading to a release that pins SUC
+v0.20.2. The `mke3-controllers-upgrade` Job runs the
+`cluster-upgrade-controller` image already running on the cluster, not the
+one staged in the target image, so a cluster that jumps straight to the
+SUC v0.20.2 release performs the apply with the old controller and hits
+the failure above. Shipping both in one image does not avoid it.
+
+**Recovery for a cluster that hit the failure.** Set the strategy type and
+remove the orphaned field in a *single* patch, then re-apply the
+`ClusterUpgrade`:
+
+```sh
+kubectl patch deploy -n system-upgrade system-upgrade-controller --type=json \
+  -p '[{"op":"remove","path":"/spec/strategy/rollingUpdate"},
+       {"op":"replace","path":"/spec/strategy/type","value":"Recreate"}]'
+```
+
+Both operations are required, and in one patch. Removing `rollingUpdate`
+while leaving `type: RollingUpdate` does not help: `rollingUpdate` is
+defaulted whenever the type is `RollingUpdate`, so the API server
+repopulates the block — which is how it came to exist in the first place,
+from v0.14.0's strategy-less manifest — and the next apply fails
+identically. A JSON patch applies as a unit, so the object never passes
+through that state. Setting `type: Recreate` leaves nothing to default,
+because `rollingUpdate` is only defaulted for `RollingUpdate`.
+
+Confirm the result before re-applying anything:
+
+```sh
+# must print: Recreate
+kubectl -n system-upgrade get deploy system-upgrade-controller \
+  -o jsonpath='{.spec.strategy.type}'
+
+# must print nothing at all — an empty result means the block is gone
+kubectl -n system-upgrade get deploy system-upgrade-controller \
+  -o jsonpath='{.spec.strategy.rollingUpdate}'
+```
+
+Both checks matter, and the second is the one that catches the failure
+state: `type: Recreate` with a surviving `rollingUpdate` block is exactly
+the combination the API server rejects. Each selects a scalar or an absent
+field rather than the whole `strategy` object, because how `jsonpath`
+renders a map has varied between `kubectl` versions.
+
+`kubectl apply` is not a workaround on its own: client-side apply also
+retains the defaulted field.
+
+This recovery procedure has **not been exercised on a live cluster**. The
+upgrade path itself has — see the verification recorded on PRODENG-3820 —
+but that run used a controller already carrying the fix and never needed
+this patch.
+
+The only evidence for the patch itself is client-side: applying it with
+`kubectl patch --local` to a Deployment in the pre-patch state
+(`type: RollingUpdate` with `maxSurge`/`maxUnavailable` 25%) yields
+`type: Recreate` with no `rollingUpdate` key. That proves the patch
+document transforms the object as intended. It does **not** prove an API
+server accepts the result, does not exercise server-side defaulting, and
+does not prove the subsequent `ClusterUpgrade` re-apply succeeds.
 
 ## Rollback
 
@@ -264,7 +464,8 @@ the procedure.
 ## Where this is documented upstream
 
 Full step-by-step behavior of each upgrade step (`mke3-docker-config`,
-`mke3-backup`, `bootc-os`, `mke3-verify-environment`, `mke3-upgrade`), additional
+`mke3-backup`, `bootc-os`, `mke3-verify-environment`, `mke3-upgrade`,
+`mke3-controllers-upgrade`), additional
 scenarios (product-only upgrade, Docker daemon config distribution), and the
 `cluster-upgrade-controller` install procedure itself live in the
 [`cluster-upgrade-controller`](https://github.com/Mirantis/cluster-upgrade-controller)
