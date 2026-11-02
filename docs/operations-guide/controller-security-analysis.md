@@ -82,11 +82,15 @@ The `plans` grant is the load-bearing entry: it is how a low-privilege controlle
 | `mke3-controllers-upgrade` (`spec.product.mke3.controllersUpgrade`) | **Not a SUC Plan** — a plain `batch/v1` Job running the controller's own image as `/manager apply-manifests`, Server-Side-Applying `system-upgrade-controller-crd.yaml`, `system-upgrade-controller.yaml`, `machine-config-controller-manifest.yaml`, `cluster-upgrade-controller-manifest.yaml` from a node hostPath (`cluster-upgrade-controller/internal/manifestapply/apply.go`) with `Force: true` and `FieldManager: cluster-upgrade-controller` | Only a bool (`enabled`) and an admission-pattern-validated path (`manifestsDir`) — but the manifests it applies are baked image content, not spec-supplied, so the controllable surface here is "whether this runs," not "what it applies" |
 
 `mke3-controllers-upgrade`'s blast radius differs qualitatively from every
-other row: it is the only step whose action is a Kubernetes API write
-(CRD/RBAC/Deployment replacement cluster-wide) rather than a node-local
-script, and it is the only step that replaces the identity
+other row, though not because it is the only step that touches the
+Kubernetes API — the `mke`/`k0rdent` row patches `MkeRelease`/`Management`
+CRs and is an API write too. The difference is scope: every other API-writing
+step mutates *custom resources* that a controller then acts on, whereas this
+one replaces cluster-scoped **CRDs, RBAC and Deployments** directly. It is
+also the only step that replaces the identity
 (ServiceAccount/RBAC) of the very controller executing it and of SUC, the
-controller every other step's Plans depend on. `Force: true` SSA will
+controller every other step's Plans depend on.
+`Force: true` SSA will
 overwrite any manual or Helm-managed changes to these three
 controllers' objects with field ownership `cluster-upgrade-controller` —
 relevant if an operator manages any of the three out-of-band (see the

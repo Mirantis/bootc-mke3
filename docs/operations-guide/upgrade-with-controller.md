@@ -230,41 +230,85 @@ spec:
 - `controllersUpgrade.enabled` gates a sixth, final step —
   `mke3-controllers-upgrade` — that re-applies the System Upgrade Controller,
   `machine-config-controller`, and `cluster-upgrade-controller` manifests
-  baked into the target OS image. **The CRD defaults this to `false`.**
+  baked into the target OS image. **The CRD defaults this to `false`, by
+  design**: the step replaces cluster-wide CRDs, RBAC and Deployments,
+  including `cluster-upgrade-controller`'s own, so it is opt-in per upgrade
+  rather than something a CR acquires implicitly.
 
-  > [!WARNING]
-  > **Leaving this unset silently skips upgrading your platform controllers.**
-  > `.status.phase` still reaches `Completed` with no error, mention, or
-  > degraded condition — there is nothing in a normal run's output that
-  > tells you the three controllers were left behind. Concretely: the OS
-  > image you just switched to stages newer SUC/`machine-config-controller`/
+  > [!NOTE]
+  > **With the field unset, the controllers are not upgraded and nothing
+  > records that.** `.status.phase` reaches `Completed`, no condition is
+  > set, and no log line reports the step being skipped — the absence of
+  > `MKE3ControllersUpgraded` in `.status.conditions` is the only signal.
+  > The target OS image stages newer SUC/`machine-config-controller`/
   > `cluster-upgrade-controller` manifests on disk
-  > (`/usr/share/mke-controllers/manifests`), but without this field none of
-  > them are ever applied — the cluster keeps running whatever it was
-  > *installed* with, indefinitely, across any number of future OS/product
-  > upgrades, until some run finally sets it. Set it explicitly on every
-  > upgrade unless you manage these three controllers out-of-band (e.g. a
-  > separate Helm release process you control) and have deliberately decided
-  > this step should not touch them.
+  > (`/usr/share/mke-controllers/manifests`); with the field unset none of
+  > them are applied, and the cluster keeps running the versions it was
+  > *installed* with across any number of later OS or product upgrades
+  > until an upgrade sets the field.
+  >
+  > **Set it to `true`** when you want the platform controllers to track the
+  > OS image — which is the normal case for a cluster whose controllers were
+  > installed from these images and are not managed elsewhere. **Leave it
+  > unset or `false`** when you manage any of the three out-of-band (a
+  > separate Helm release, for example), when you need the product upgrade
+  > and the controller upgrade to land in separate change windows, or when
+  > you want to keep a known-good controller version across a product bump.
   >
   > It is also only visible to CRD versions new enough to know about it:
   > the field first exists in `cluster-upgrade-controller` `v0.1.9-tp1`/
-  > `v0.2.0`. Applying it against an **older** pre-upgrade
-  > `cluster-upgrade-controller` does not error either — Kubernetes
-  > structural-schema pruning silently drops the whole block, `kubectl
-  > apply` succeeds, and the step still never runs. Confirm it was accepted
-  > immediately after applying, not after waiting out the whole upgrade:
+  > `v0.2.0`. What an **older** pre-upgrade `cluster-upgrade-controller`
+  > does with it depends on the client's field-validation mode, so neither
+  > outcome should be assumed:
+  >
+  > | `kubectl apply --validate` | Result |
+  > |---|---|
+  > | `strict` (the default since kubectl 1.27) | the apply is **rejected** with an unknown-field error, and nothing is created |
+  > | `warn` | the apply succeeds with a warning; the block is dropped |
+  > | `ignore` / `false`, or a pre-1.25 client | the apply succeeds **silently** and the block is dropped |
+  >
+  > In the last two cases the step never runs even though the apply
+  > reported success. Confirm the field was accepted immediately after
+  > applying, not after waiting out the whole upgrade — this check is
+  > correct in every mode:
   > ```sh
   > kubectl get clusterupgrade <name> \
   >   -o jsonpath='{.spec.product.mke3.controllersUpgrade.enabled}'   # must print: true
   > ```
   > If it prints nothing, the pre-upgrade `cluster-upgrade-controller` is too
-  > old for this field — apply the baked SUC CRD/Deployment manifests by
-  > hand after the upgrade instead:
+  > old for this field. Upgrade the three controllers by hand after the
+  > product upgrade instead, using the manifests the new OS image staged on
+  > each node.
+  >
+  > These manifests live at `/usr/share/mke-controllers/manifests` **on the
+  > nodes**, not on your workstation, and `kubectl apply -f` reads the
+  > client's filesystem — pointing it at that path fails with a
+  > missing-path error. Copy them off a node first. This needs no SSH
+  > (managers revoke it after install) because `kubectl debug node` runs a
+  > pod with the host filesystem mounted at `/host`; `--attach=true` is
+  > required or the command returns no output:
   > ```sh
-  > kubectl apply -f /usr/share/mke-controllers/manifests/system-upgrade-controller-crd.yaml
-  > kubectl apply -f /usr/share/mke-controllers/manifests/system-upgrade-controller.yaml
+  > NODE=$(kubectl get nodes -l node-role.kubernetes.io/master -o name | head -1 | cut -d/ -f2)
+  > for m in system-upgrade-controller-crd system-upgrade-controller \
+  >          machine-config-controller-manifest cluster-upgrade-controller-manifest; do
+  >   kubectl -n default debug "node/${NODE}" --image=busybox --quiet --attach=true -- \
+  >     chroot /host cat "/usr/share/mke-controllers/manifests/${m}.yaml" > "${m}.yaml"
+  > done
   > ```
+  > Then apply all four — applying only the SUC pair leaves
+  > `machine-config-controller` and `cluster-upgrade-controller` on their old
+  > versions, including an outdated `ClusterUpgrade` CRD. The
+  > `cluster-upgrade-controller` manifest sets no `metadata.namespace`, so it
+  > needs `--namespace` explicitly or it lands in `default` (compare
+  > `ansible/tasks/cluster-upgrade-controller-tasks.yml`):
+  > ```sh
+  > kubectl apply -f system-upgrade-controller-crd.yaml
+  > kubectl apply -f system-upgrade-controller.yaml
+  > kubectl apply -f machine-config-controller-manifest.yaml
+  > kubectl apply --namespace mke -f cluster-upgrade-controller-manifest.yaml
+  > ```
+  > Applying `cluster-upgrade-controller`'s own manifest replaces the
+  > controller performing the upgrade; do it last, as the step itself does.
 
   This step runs **last**, after `mke3-upgrade` — every node has already
   booted the target image by then, including the final act of the chain:
