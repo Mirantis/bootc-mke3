@@ -91,6 +91,14 @@ needed.
   and rotate it on a manager (`docker swarm join-token --rotate worker`) as
   soon as the batch has joined. Rotation invalidates the issued token, so a
   leaked copy is no longer a risk; already-joined machines are unaffected.
+- **Host hardening is not part of the join.** The mechanism changes no host
+  state beyond joining the swarm, so a machine that joins this way is not
+  hardened the way the Ansible installer hardens the machines it installs
+  (sshd masked, the connecting user's sudo revoked). Masking sshd and
+  revoking the provisioning user's sudo belong to whoever provisions the
+  machine — see [Does the joined machine end up hardened (sshd masked, sudo
+  revoked)?](join-machines-no-touch.md#does-the-joined-machine-end-up-hardened-sshd-masked-sudo-revoked)
+  in the runbook.
 
 ## Tunables
 
