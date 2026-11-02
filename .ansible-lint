@@ -6,12 +6,12 @@
 # found manually, in this same ansible/ tree, with no automated check to have
 # caught it).
 #
-# As measured when this file was introduced, `ansible-lint ansible/`
-# reports 82 failures and 2 warnings at the `basic` profile, dominated by
-# missing task `name:` (52 findings) and command-instead-of-shell (14) —
-# the CI check that runs this is advisory only (does not fail the build)
-# until that backlog is worked down. `min` profile passes clean today with
-# zero findings.
+# The ansible/ tree currently passes this profile clean: `ansible-lint
+# ansible/` reports 0 failures and 0 warnings, and in fact satisfies the
+# stricter `production` profile. The backlog that existed when this file
+# was introduced (82 failures, dominated by missing task `name:` and
+# command-instead-of-shell) was worked down by subsequent changes to the
+# tree, so the CI check that runs this is blocking, not advisory.
 #
 # Run locally: pip install ansible-lint; ansible-lint ansible/
 profile: basic
