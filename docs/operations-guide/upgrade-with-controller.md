@@ -276,21 +276,24 @@ spec:
   > pod with the host filesystem mounted at `/host`; `--attach=true` is
   > required or the command returns no output.
   >
-  > `DEBUG_IMAGE` below is operator-supplied, because the right image
-  > depends on the environment. It must be pullable on that cluster — or
-  > already present on the node — and must contain both a shell and
-  > `chroot`. `busybox` satisfies this wherever the cluster can reach a
-  > public registry, which is what CI uses. **On an air-gapped cluster
-  > `busybox` will not pull**, leaving the debug pod in `ImagePullBackOff`
-  > before any manifest is copied; substitute an image already preloaded on
-  > the nodes. A distroless image will not work — it has neither a shell
-  > nor `chroot`.
+  > **Prerequisite.** `DEBUG_IMAGE` has no default and must be set
+  > explicitly: the image must already be present on the node, or
+  > pullable by that cluster, *before* this procedure starts, and must
+  > contain both a shell and `chroot`. A distroless image will not work —
+  > it has neither. On a cluster with public registry access `busybox` is
+  > sufficient, and is what CI uses. **On an air-gapped cluster `busybox`
+  > will not pull**: the debug pod sits in `ImagePullBackOff` before any
+  > manifest is copied, so an air-gapped cluster must mirror a suitable
+  > image into its own registry or use one already preloaded on the nodes.
+  > Establish which image that is for your environment before you begin;
+  > this runbook does not name one, because whether a given image carries
+  > a shell and `chroot` has to be checked rather than assumed.
   >
   > The namespace must permit a privileged pod with a host mount. The run
   > this procedure is derived from used `-n default` with the MKE admin
   > client bundle.
   > ```sh
-  > DEBUG_IMAGE=busybox   # see the requirements above before using this on an air-gapped cluster
+  > : "${DEBUG_IMAGE:?set DEBUG_IMAGE to an image available to this cluster, carrying a shell and chroot}"
   > NODE=$(kubectl get nodes -l node-role.kubernetes.io/master -o name | head -1 | cut -d/ -f2)
   > for m in system-upgrade-controller-crd system-upgrade-controller \
   >          machine-config-controller-manifest cluster-upgrade-controller-manifest; do
@@ -418,9 +421,20 @@ because `rollingUpdate` is only defaulted for `RollingUpdate`.
 Confirm the result before re-applying anything:
 
 ```sh
+# must print: Recreate
 kubectl -n system-upgrade get deploy system-upgrade-controller \
-  -o jsonpath='{.spec.strategy}'   # must print: {"type":"Recreate"}
+  -o jsonpath='{.spec.strategy.type}'
+
+# must print nothing at all — an empty result means the block is gone
+kubectl -n system-upgrade get deploy system-upgrade-controller \
+  -o jsonpath='{.spec.strategy.rollingUpdate}'
 ```
+
+Both checks matter, and the second is the one that catches the failure
+state: `type: Recreate` with a surviving `rollingUpdate` block is exactly
+the combination the API server rejects. Each selects a scalar or an absent
+field rather than the whole `strategy` object, because how `jsonpath`
+renders a map has varied between `kubectl` versions.
 
 `kubectl apply` is not a workaround on its own: client-side apply also
 retains the defaulted field.
@@ -429,6 +443,14 @@ This recovery procedure has **not been exercised on a live cluster**. The
 upgrade path itself has — see the verification recorded on PRODENG-3820 —
 but that run used a controller already carrying the fix and never needed
 this patch.
+
+The only evidence for the patch itself is client-side: applying it with
+`kubectl patch --local` to a Deployment in the pre-patch state
+(`type: RollingUpdate` with `maxSurge`/`maxUnavailable` 25%) yields
+`type: Recreate` with no `rollingUpdate` key. That proves the patch
+document transforms the object as intended. It does **not** prove an API
+server accepts the result, does not exercise server-side defaulting, and
+does not prove the subsequent `ClusterUpgrade` re-apply succeeds.
 
 ## Rollback
 
