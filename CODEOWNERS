@@ -1,0 +1,5 @@
+# Default reviewers for everything in the repository. The last matching
+# pattern wins, so add narrower rules below this line when a path needs
+# different owners. The team must have write access to this repository,
+# otherwise GitHub ignores it as an owner.
+*       @Mirantis/prodeng-devops
