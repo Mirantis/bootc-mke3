@@ -301,6 +301,7 @@ spec:
   > ```sh
   > cuc_debug_env() {
   >   local selector pod
+  >   unset CUC_DEBUG_READY NODE DEBUG_IMAGE
   >   selector=$(kubectl -n mke get deploy cluster-upgrade-controller \
   >     -o go-template='{{range $k, $v := .spec.selector.matchLabels}}{{$k}}={{$v}},{{end}}') || return 1
   >   selector=${selector%,}
@@ -314,8 +315,11 @@ spec:
   >   [ -n "$NODE" ] || { echo "could not determine the node running $pod" >&2; return 1; }
   >   DEBUG_IMAGE=$(kubectl -n mke get pod "$pod" -o jsonpath='{.spec.containers[0].image}')
   >   [ -n "$DEBUG_IMAGE" ] || { echo "could not determine the image of $pod" >&2; return 1; }
+  >   CUC_DEBUG_READY=1
   > }
-  > cuc_debug_env || echo "debug environment not derived; do not continue" >&2
+  > if ! cuc_debug_env; then
+  >   echo "debug environment not derived; the later steps will refuse to run" >&2
+  > fi
   > ```
   >
   > The guards matter because the failure they prevent is silent rather than
@@ -360,14 +364,35 @@ spec:
   > this procedure is derived from used `-n default` with the MKE admin
   > client bundle.
   > ```sh
-  > : "${DEBUG_IMAGE:?set DEBUG_IMAGE to an image available to this cluster, carrying a shell and chroot}"
-  > NODE="${NODE:-$(kubectl get nodes -l node-role.kubernetes.io/master -o name | head -1 | cut -d/ -f2)}"
-  > for m in system-upgrade-controller-crd system-upgrade-controller \
-  >          machine-config-controller-manifest cluster-upgrade-controller-manifest; do
-  >   kubectl -n default debug "node/${NODE}" --image="${DEBUG_IMAGE}" --quiet --attach=true -- \
-  >     chroot /host cat "/usr/share/mke-controllers/manifests/${m}.yaml" > "${m}.yaml"
-  > done
+  > cuc_copy_manifests() {
+  >   local m tmp
+  >   unset CUC_MANIFESTS_FRESH
+  >   [ "${CUC_DEBUG_READY:-}" = 1 ] || {
+  >     echo "NODE and DEBUG_IMAGE were not freshly derived; run cuc_debug_env first" >&2; return 1; }
+  >   for m in system-upgrade-controller-crd system-upgrade-controller \
+  >            machine-config-controller-manifest cluster-upgrade-controller-manifest; do
+  >     tmp=$(mktemp "./${m}.yaml.XXXXXX") || return 1
+  >     if kubectl -n default debug "node/${NODE}" --image="${DEBUG_IMAGE}" --quiet --attach=true -- \
+  >          chroot /host cat "/usr/share/mke-controllers/manifests/${m}.yaml" > "$tmp" && [ -s "$tmp" ]; then
+  >       mv "$tmp" "${m}.yaml"
+  >     else
+  >       rm -f "$tmp"
+  >       echo "copy of ${m}.yaml failed; any existing copy was left untouched" >&2
+  >       return 1
+  >     fi
+  >   done
+  >   CUC_MANIFESTS_FRESH=1
+  > }
+  > if ! cuc_copy_manifests; then
+  >   echo "manifests not copied; do not apply" >&2
+  > fi
   > ```
+  > Each file is written through `mktemp` and renamed only after the copy
+  > succeeds and produces a non-empty result. Redirecting straight onto
+  > `${m}.yaml` truncates it the moment the shell opens it — before
+  > `kubectl` runs, let alone fails — so a failed retry would otherwise
+  > destroy manifests a previous successful run had copied.
+  >
   > Then apply all four — applying only the SUC pair leaves
   > `machine-config-controller` and `cluster-upgrade-controller` on their old
   > versions, including an outdated `ClusterUpgrade` CRD. The
@@ -375,11 +400,19 @@ spec:
   > needs `--namespace` explicitly or it lands in `default` (compare
   > `ansible/tasks/cluster-upgrade-controller-tasks.yml`):
   > ```sh
-  > kubectl apply -f system-upgrade-controller-crd.yaml
-  > kubectl apply -f system-upgrade-controller.yaml
-  > kubectl apply -f machine-config-controller-manifest.yaml
-  > kubectl apply --namespace mke -f cluster-upgrade-controller-manifest.yaml
+  > cuc_apply_manifests() {
+  >   [ "${CUC_MANIFESTS_FRESH:-}" = 1 ] || {
+  >     echo "manifests were not freshly copied; not applying" >&2; return 1; }
+  >   kubectl apply -f system-upgrade-controller-crd.yaml &&
+  >   kubectl apply -f system-upgrade-controller.yaml &&
+  >   kubectl apply -f machine-config-controller-manifest.yaml &&
+  >   kubectl apply --namespace mke -f cluster-upgrade-controller-manifest.yaml
+  > }
+  > cuc_apply_manifests
   > ```
+  > The apply step refuses unless the copy above completed in this shell.
+  > Files left over from an earlier attempt are indistinguishable from fresh
+  > ones on disk, and applying a stale manifest is worse than applying none.
   > Applying `cluster-upgrade-controller`'s own manifest replaces the
   > controller performing the upgrade; do it last, as the step itself does.
 
