@@ -279,28 +279,124 @@ spec:
   > **Prerequisite.** `DEBUG_IMAGE` has no default and must be set
   > explicitly: the image must already be present on the node, or
   > pullable by that cluster, *before* this procedure starts, and must
-  > contain both a shell and `chroot`. A distroless image will not work —
-  > it has neither. On a cluster with public registry access `busybox` is
+  > contain both a shell and `chroot`. A distroless image has neither and
+  > will not work. On a cluster with public registry access `busybox` is
   > sufficient, and is what CI uses. **On an air-gapped cluster `busybox`
   > will not pull**: the debug pod sits in `ImagePullBackOff` before any
-  > manifest is copied, so an air-gapped cluster must mirror a suitable
-  > image into its own registry or use one already preloaded on the nodes.
-  > Establish which image that is for your environment before you begin;
-  > this runbook does not name one, because whether a given image carries
-  > a shell and `chroot` has to be checked rather than assumed.
+  > manifest is copied.
+  >
+  > On an air-gapped cluster, use `cluster-upgrade-controller`'s own image.
+  > It carries `/bin/sh` and `/usr/sbin/chroot`, and it is already pulled on
+  > the node that runs it — this procedure exists because that controller is
+  > running an older version than the one staged on disk, so its image is
+  > present there. That guarantee holds **on the controller's own node, not
+  > on every master**, so select the node from the controller's pod rather
+  > than taking the first master in the list; on a multi-manager cluster
+  > those are usually different nodes, and a master that has never run the
+  > controller may be unable to pull the image.
+  >
+  > Read both the image ref and the node from the running Deployment, so
+  > neither a version nor a label is written here to go stale:
+  >
+  > ```sh
+  > cuc_debug_env() {
+  >   local selector pod
+  >   unset CUC_DEBUG_READY CUC_MANIFESTS_FRESH NODE DEBUG_IMAGE
+  >   selector=$(kubectl -n mke get deploy cluster-upgrade-controller \
+  >     -o go-template='{{range $k, $v := .spec.selector.matchLabels}}{{$k}}={{$v}},{{end}}') || return 1
+  >   selector=${selector%,}
+  >   [ -n "$selector" ] || { echo "no selector on the cluster-upgrade-controller Deployment" >&2; return 1; }
+  >   pod=$(kubectl -n mke get pod -l "$selector" \
+  >     --field-selector=status.phase=Running \
+  >     -o custom-columns='NAME:.metadata.name,READY:.status.conditions[?(@.type=="Ready")].status' \
+  >     --no-headers | awk '$2 == "True" {print $1; exit}')
+  >   [ -n "$pod" ] || { echo "no Running and Ready cluster-upgrade-controller pod found" >&2; return 1; }
+  >   NODE=$(kubectl -n mke get pod "$pod" -o jsonpath='{.spec.nodeName}')
+  >   [ -n "$NODE" ] || { echo "could not determine the node running $pod" >&2; return 1; }
+  >   DEBUG_IMAGE=$(kubectl -n mke get pod "$pod" -o jsonpath='{.spec.containers[0].image}')
+  >   [ -n "$DEBUG_IMAGE" ] || { echo "could not determine the image of $pod" >&2; return 1; }
+  >   CUC_DEBUG_READY=1
+  > }
+  > if ! cuc_debug_env; then
+  >   echo "debug environment not derived; the later steps will refuse to run" >&2
+  > fi
+  > ```
+  >
+  > The guards matter because the failure they prevent is silent rather than
+  > loud. An empty selector is not an error to `kubectl`: `-l ''` matches
+  > every pod, so an unrelated pod's node and image would be used and would
+  > pass every later check. Selecting a `Running` and `Ready` pod rather
+  > than the first one matters here specifically because this procedure runs
+  > *during* a controller upgrade — a rollout can be in flight, in which
+  > case the query returns the ready old pod and its pending replacement
+  > together, while `READY 1/1` still reads as expected.
+  >
+  > This is written as a function for one reason: it has to **stop**. A bare
+  > `: "${VAR:?message}"` guard prints its message and the shell carries on
+  > to the next pasted line, which is the dangerous one; `exit` stops it but
+  > closes the operator's session, which on an air-gapped host is a
+  > disproportionate result for a transient lookup failure. `return` inside
+  > a function does both — the remaining derivation is skipped and the shell
+  > survives. Both behaviours were confirmed by pasting this block into an
+  > interactive shell rather than reasoned about.
+  >
+  > `NODE` set here replaces the `kubectl get nodes … | head -1` selection
+  > used below; the debug pod must land on the node whose image availability
+  > was just established. The selector is read from the Deployment rather
+  > than hardcoded because the chart generates it from the release name —
+  > today it resolves to `app.kubernetes.io/name=cluster-upgrade-controller,
+  > app.kubernetes.io/instance=<release>`, which a renamed release changes.
+  >
+  > Read it from the cluster rather than from the node's `versions.txt`:
+  > that file is on the node, and reaching the node is what the debug pod
+  > is for.
+  >
+  > `mirantis/ucp` also carries both and is a sound second choice.
+  > **Two preloaded images do not work and both look as if they should:**
+  > `rancher/kubectl` contains only the `kubectl` binary and two `/etc`
+  > files — no shell — so `chroot` fails in a way that resembles a
+  > permissions or path error rather than a missing binary; and
+  > `machine-config-controller` has a large filesystem but no shell and no
+  > `chroot`, while the `machine-config-controller/agent` image beside it
+  > has both.
   >
   > The namespace must permit a privileged pod with a host mount. The run
   > this procedure is derived from used `-n default` with the MKE admin
   > client bundle.
   > ```sh
-  > : "${DEBUG_IMAGE:?set DEBUG_IMAGE to an image available to this cluster, carrying a shell and chroot}"
-  > NODE=$(kubectl get nodes -l node-role.kubernetes.io/master -o name | head -1 | cut -d/ -f2)
-  > for m in system-upgrade-controller-crd system-upgrade-controller \
-  >          machine-config-controller-manifest cluster-upgrade-controller-manifest; do
-  >   kubectl -n default debug "node/${NODE}" --image="${DEBUG_IMAGE}" --quiet --attach=true -- \
-  >     chroot /host cat "/usr/share/mke-controllers/manifests/${m}.yaml" > "${m}.yaml"
-  > done
+  > cuc_copy_manifests() {
+  >   local m tmp
+  >   unset CUC_MANIFESTS_FRESH
+  >   [ "${CUC_DEBUG_READY:-}" = 1 ] || {
+  >     echo "NODE and DEBUG_IMAGE were not freshly derived; run cuc_debug_env first" >&2; return 1; }
+  >   for m in system-upgrade-controller-crd system-upgrade-controller \
+  >            machine-config-controller-manifest cluster-upgrade-controller-manifest; do
+  >     tmp=$(mktemp "./${m}.yaml.XXXXXX") || return 1
+  >     if kubectl -n default debug "node/${NODE}" --image="${DEBUG_IMAGE}" --quiet --attach=true -- \
+  >          chroot /host cat "/usr/share/mke-controllers/manifests/${m}.yaml" > "$tmp" && [ -s "$tmp" ]; then
+  >       if ! mv "$tmp" "${m}.yaml"; then
+  >         rm -f "$tmp"
+  >         echo "copy of ${m}.yaml failed; any existing copy was left untouched" >&2
+  >         return 1
+  >       fi
+  >     else
+  >       rm -f "$tmp"
+  >       echo "copy of ${m}.yaml failed; any existing copy was left untouched" >&2
+  >       return 1
+  >     fi
+  >   done
+  >   CUC_MANIFESTS_FRESH=1
+  > }
+  > if ! cuc_copy_manifests; then
+  >   echo "manifests not copied; do not apply" >&2
+  > fi
   > ```
+  > Each file is written through `mktemp` and renamed only after the copy
+  > succeeds and produces a non-empty result. Redirecting straight onto
+  > `${m}.yaml` truncates it the moment the shell opens it — before
+  > `kubectl` runs, let alone fails — so a failed retry would otherwise
+  > destroy manifests a previous successful run had copied.
+  >
   > Then apply all four — applying only the SUC pair leaves
   > `machine-config-controller` and `cluster-upgrade-controller` on their old
   > versions, including an outdated `ClusterUpgrade` CRD. The
@@ -308,11 +404,19 @@ spec:
   > needs `--namespace` explicitly or it lands in `default` (compare
   > `ansible/tasks/cluster-upgrade-controller-tasks.yml`):
   > ```sh
-  > kubectl apply -f system-upgrade-controller-crd.yaml
-  > kubectl apply -f system-upgrade-controller.yaml
-  > kubectl apply -f machine-config-controller-manifest.yaml
-  > kubectl apply --namespace mke -f cluster-upgrade-controller-manifest.yaml
+  > cuc_apply_manifests() {
+  >   [ "${CUC_MANIFESTS_FRESH:-}" = 1 ] || {
+  >     echo "manifests were not freshly copied; not applying" >&2; return 1; }
+  >   kubectl apply -f system-upgrade-controller-crd.yaml &&
+  >   kubectl apply -f system-upgrade-controller.yaml &&
+  >   kubectl apply -f machine-config-controller-manifest.yaml &&
+  >   kubectl apply --namespace mke -f cluster-upgrade-controller-manifest.yaml
+  > }
+  > cuc_apply_manifests
   > ```
+  > The apply step refuses unless the copy above completed in this shell.
+  > Files left over from an earlier attempt are indistinguishable from fresh
+  > ones on disk, and applying a stale manifest is worse than applying none.
   > Applying `cluster-upgrade-controller`'s own manifest replaces the
   > controller performing the upgrade; do it last, as the step itself does.
 
