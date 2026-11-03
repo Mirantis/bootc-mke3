@@ -22,7 +22,7 @@ pods when the investigation is over — nothing expires them.
    [Access the cluster](access-cluster.md).
 2. If support work is done by non-admin MKE users: the privilege grant from
    [Run privileged support containers on MKE](privileged-support-containers.md).
-   An MKE admin client bundle does not need it — verified on MKE 3.9.5 — but a
+   An MKE admin client bundle does not need it, but a
    non-admin user is refused without it. Either way you need the
    `cluster-support` namespace that runbook creates.
 3. `envsubst` (package `gettext`/`gettext-base`) on your workstation, for the
@@ -32,7 +32,7 @@ pods when the investigation is over — nothing expires them.
    the Swarm socket reports it:
 
    ```sh
-   docker version --format '{{.Server.Version}}'    # e.g. ucp/3.9.5 → tag 3.9.5
+   docker version --format '{{.Server.Version}}'    # e.g. ucp/3.9.7 → tag 3.9.7
    ```
 
    The MKE UI also shows it (**Admin Settings**), and on a node itself the
@@ -57,7 +57,7 @@ filesystem at `/host`:
 ```sh
 kubectl debug node/<node-name> -it -n cluster-support \
   --profile=sysadmin \
-  --image=mirantis/ucp-dsinfo:3.9.5 \
+  --image=mirantis/ucp-dsinfo:3.9.7 \
   -- bash
 ```
 
@@ -78,9 +78,8 @@ kubectl debug node/<node-name> -it -n cluster-support \
 Upstream reference:
 [debugging a node with kubectl debug](https://kubernetes.io/docs/tasks/debug/debug-cluster/kubectl-node-debug/).
 
-Verified on MKE 3.9.5 with an admin bundle: the generated pod reached `Running`
-and `cat /host/etc/redhat-release` inside it printed the node's Rocky Linux
-release. If your MKE version refuses the pod `kubectl debug` generates, use
+With an admin bundle the generated pod reaches `Running`, and
+`cat /host/etc/redhat-release` inside it prints the node's Rocky Linux release. If your MKE version refuses the pod `kubectl debug` generates, use
 option 2 — the manifest is explicit about every attribute it requests.
 
 ### Option 2 — One or many nodes, with a manifest

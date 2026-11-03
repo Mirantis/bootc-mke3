@@ -87,10 +87,8 @@ kubectl -n cluster-support get jobs -l app=log-capture -w
 ```
 
 How long a capture takes is dominated by the `mke3` collector, which runs MKE's
-own support command with a 20-minute timeout. Measured on a 3-manager MKE 3.9.5
-cluster: 25-26 seconds per node for all five collectors, producing a 1.9 MB
-bundle of which 1.75 MB is the MKE support tarball. A loaded or larger node can
-take considerably longer, so bound the wait generously rather than tightly:
+own support command with a 20-minute timeout, so bound the wait generously
+rather than tightly:
 
 ```sh
 kubectl -n cluster-support wait --for=condition=complete job -l app=log-capture --timeout=45m
@@ -205,8 +203,8 @@ with no storage. It is labelled dev/test because it is not a shared destination
 
 Access modes are metadata, not enforcement. For a node-local volume (`hostPath`,
 `local`) nothing enforces them: such volumes have no attach step, and these pods
-bypass the scheduler by setting `spec.nodeName`. Measured on MKE 3.9.5, one
-claim, three nodes captured concurrently:
+bypass the scheduler by setting `spec.nodeName`. With one claim and three nodes
+captured concurrently:
 
 | Claim declares | Result |
 |---|---|
@@ -238,7 +236,7 @@ pods are never scheduled — they set `spec.nodeName`. Verified: the claim stays
 `FailedMount ... PVC is not bound`. Bind the claim statically (name its
 `volumeName`, set `storageClassName: ""`) or use an `Immediate`-binding class.
 
-Verified working on MKE 3.9.5: with a statically bound claim, a capture logs
+With a statically bound claim, a capture logs
 `wrote <bundle>.tar.gz to the PersistentVolumeClaim` and reports
 `delivered to 2 destination(s)` alongside the default hostPath destination.
 

@@ -30,8 +30,8 @@ mke_custom_ca_client_enabled: false
 #     https://docs.mirantis.com/mke/3.9/ops/administer-cluster/manage-certificate-authorities.html
 #     and the `ca` CLI reference. That's the CN MKE's own generated etcd CA
 #     carries, but the `ca --etcd` command's *validation* of a supplied
-#     replacement checks for "swarm-ca" instead -- confirmed against a live
-#     MKE 3.9.3 cluster: a cert with CN "MKE etcd Root CA" is rejected with
+#     replacement checks for "swarm-ca" instead: a cert with CN
+#     "MKE etcd Root CA" is rejected with
 #     `wrong common name: expected "swarm-ca"`; a cert with CN "swarm-ca" is
 #     accepted. Use "swarm-ca" here regardless of what the docs say.
 #   - Client CA:   UCP Client Root CA -- matches the docs, confirmed working.

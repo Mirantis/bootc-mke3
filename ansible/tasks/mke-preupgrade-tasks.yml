@@ -1,4 +1,4 @@
-# TODO: add more checks as described in https://docs.mirantis.com/mke/3.7/ops/upgrades-and-migrations/upgrade-mke/verify-environment.html
+# TODO: add more checks as described in https://docs.mirantis.com/mke/3.9/ops/upgrades-and-migrations/upgrade-mke/verify-environment.html
 - name: MKE-native upgrade check
   ansible.builtin.command:
     argv:

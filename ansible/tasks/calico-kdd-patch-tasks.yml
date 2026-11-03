@@ -24,7 +24,7 @@
 #   mke_url     – MKE load-balancer IP/hostname    (from inventory all.vars)
 #   bundle_dest – local directory for the bundle   (default: playbook_dir/mke-bundle)
 #
-# Ref: https://docs.mirantis.com/mke/3.7/cli-ref/mke-cli-install.html
+# Ref: https://docs.mirantis.com/mke/3.9/cli-ref/mke-cli-install.html
 
 - name: Fetch MKE client bundle
   ansible.builtin.include_tasks: tasks/mke-client-bundle-tasks.yml

@@ -47,7 +47,7 @@ Add one line per registry. The file is gitignored and will never be committed.
 
 Cluster should consist of one or more compute machine nodes. In order to use `bootc-mke3`, machines should meet following requirements:
 
-1. All machines must use the `bootc-mke3` source base (image). For available images see [Assets section](../../README.md#assets)
+1. All machines must use the `bootc-mke3` source base (image). For available images see the [Releases page](https://github.com/Mirantis/bootc-mke3/releases)
 
 > [!NOTE]
 > **Simple** ISO edition is used mostly for demo/test purposes. For production-grade clusters consider using **Generic** ISO. The QCOW2 cloud image ships uncustomised — it is the user's responsibility to customise and secure it appropriately for production use.

@@ -14,7 +14,7 @@ this.
    bundle directory so `docker` talks to the cluster's Swarm endpoint.
 2. An MKE administrator identity. Role changes are cluster-level operations.
 3. The machine's name. A machine has **one** name across both layers: its Swarm
-   `HOSTNAME` is identical to its Kubernetes node name (verified on MKE 3.9.5),
+   `HOSTNAME` is identical to its Kubernetes node name,
    so the same string works with `docker node` and `kubectl`.
 
    ```sh
@@ -78,10 +78,6 @@ object. Watch until it settles:
 ```sh
 watch -n5 'docker node ls; kubectl get nodes'
 ```
-
-Measured on MKE 3.9.5 (3 managers, `m6a.2xlarge`): a promotion reached
-`manager` in Swarm and carried the Kubernetes label and taint within **~24s**,
-and the machine returned to Swarm `Ready` at **~30s**. Demotion is comparable.
 
 ## Expected Results
 

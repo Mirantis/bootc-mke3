@@ -14,10 +14,7 @@ Whether you need it depends on who runs the support runbooks:
 | MKE admin client bundle (what `mke-install-playbook.yml` fetches) | No — admins bypass the attribute check. |
 | Any non-admin MKE user, even with Kubernetes RBAC to create pods | **Yes** — creation is refused without it. |
 
-Verified on MKE 3.9.5: an admin bundle created privileged pods and capture Jobs
-with only `system-upgrade:system-upgrade` on the allowlist, while a non-admin
-user with `create pods` in the namespace was refused until the grant below was
-applied. Run the grant if support work is ever done by non-admin operators;
+Run the grant if support work is ever done by non-admin operators;
 skip it if every operator uses an admin bundle.
 
 It applies to both support runbooks, which create exactly these pods:
@@ -146,9 +143,9 @@ rm -f mke-config.toml     # the file is cluster configuration, not a secret, but
 > certificate; drop it once MKE has a trusted certificate installed.
 
 The change takes effect on the next admission decision; no MKE restart is
-required. Verified on MKE 3.9.5: a creation refused seconds earlier succeeded on
-the first retry after the `PUT` returned 200, and the pre-existing
-`system-upgrade:system-upgrade` entry survived the edit.
+required: a creation refused seconds earlier succeeds on the first retry after
+the `PUT` returns 200, and the pre-existing `system-upgrade:system-upgrade`
+entry survives the edit.
 
 ### 3. Verify the grant
 
@@ -156,8 +153,8 @@ Create a pod that requests all three attributes on a real node and check that
 admission accepts it. Substitute any node name from `kubectl get nodes`:
 
 ```sh
-kubectl -n cluster-support run grant-check --image=mirantis/ucp-dsinfo:3.9.5 --restart=Never \
-  --overrides='{"spec":{"nodeName":"<any-node-name>","hostPID":true,"containers":[{"name":"grant-check","image":"mirantis/ucp-dsinfo:3.9.5","command":["true"],"securityContext":{"privileged":true},"volumeMounts":[{"name":"h","mountPath":"/host"}]}],"volumes":[{"name":"h","hostPath":{"path":"/"}}]}}'
+kubectl -n cluster-support run grant-check --image=mirantis/ucp-dsinfo:3.9.7 --restart=Never \
+  --overrides='{"spec":{"nodeName":"<any-node-name>","hostPID":true,"containers":[{"name":"grant-check","image":"mirantis/ucp-dsinfo:3.9.7","command":["true"],"securityContext":{"privileged":true},"volumeMounts":[{"name":"h","mountPath":"/host"}]}],"volumes":[{"name":"h","hostPath":{"path":"/"}}]}}'
 kubectl -n cluster-support delete pod grant-check
 ```
 
@@ -217,8 +214,8 @@ its own — it lists what *may* be granted; without an entry in
 
 ### I am an MKE admin — do I need this at all?
 
-No. Verified on MKE 3.9.5: with an admin client bundle, the debug shell Pods and
-the capture Jobs of both support runbooks were created and ran with only
+No. With an admin client bundle, the debug shell Pods and the capture Jobs of
+both support runbooks are created and run with only
 `system-upgrade:system-upgrade` on the allowlist. Capture Jobs are no exception
 — the pods the Job controller creates are not subject to the non-admin check
 either.
