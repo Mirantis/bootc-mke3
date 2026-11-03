@@ -286,16 +286,35 @@ spec:
   > manifest is copied.
   >
   > On an air-gapped cluster, use `cluster-upgrade-controller`'s own image.
-  > It carries `/bin/sh` and `/usr/sbin/chroot`, and it is guaranteed to be
-  > on the node — this procedure exists because that controller is running
-  > an older version than the one staged on disk, so its image is pulled
-  > and present. Read its exact ref from the running Deployment rather than
-  > typing a version, so nothing here goes stale:
+  > It carries `/bin/sh` and `/usr/sbin/chroot`, and it is already pulled on
+  > the node that runs it — this procedure exists because that controller is
+  > running an older version than the one staged on disk, so its image is
+  > present there. That guarantee holds **on the controller's own node, not
+  > on every master**, so select the node from the controller's pod rather
+  > than taking the first master in the list; on a multi-manager cluster
+  > those are usually different nodes, and a master that has never run the
+  > controller may be unable to pull the image.
+  >
+  > Read both the image ref and the node from the running Deployment, so
+  > neither a version nor a label is written here to go stale:
   >
   > ```sh
-  > DEBUG_IMAGE=$(kubectl -n mke get deploy cluster-upgrade-controller \
-  >   -o jsonpath='{.spec.template.spec.containers[0].image}')
+  > SELECTOR=$(kubectl -n mke get deploy cluster-upgrade-controller \
+  >   -o go-template='{{range $k, $v := .spec.selector.matchLabels}}{{$k}}={{$v}},{{end}}' \
+  >   | sed 's/,$//')
+  > POD=$(kubectl -n mke get pod -l "$SELECTOR" \
+  >   -o jsonpath='{.items[0].metadata.name}')
+  > NODE=$(kubectl -n mke get pod "$POD" -o jsonpath='{.spec.nodeName}')
+  > DEBUG_IMAGE=$(kubectl -n mke get pod "$POD" \
+  >   -o jsonpath='{.spec.containers[0].image}')
   > ```
+  >
+  > `NODE` set here replaces the `kubectl get nodes … | head -1` selection
+  > used below; the debug pod must land on the node whose image availability
+  > was just established. The selector is read from the Deployment rather
+  > than hardcoded because the chart generates it from the release name —
+  > today it resolves to `app.kubernetes.io/name=cluster-upgrade-controller,
+  > app.kubernetes.io/instance=<release>`, which a renamed release changes.
   >
   > Read it from the cluster rather than from the node's `versions.txt`:
   > that file is on the node, and reaching the node is what the debug pod
@@ -315,7 +334,7 @@ spec:
   > client bundle.
   > ```sh
   > : "${DEBUG_IMAGE:?set DEBUG_IMAGE to an image available to this cluster, carrying a shell and chroot}"
-  > NODE=$(kubectl get nodes -l node-role.kubernetes.io/master -o name | head -1 | cut -d/ -f2)
+  > NODE="${NODE:-$(kubectl get nodes -l node-role.kubernetes.io/master -o name | head -1 | cut -d/ -f2)}"
   > for m in system-upgrade-controller-crd system-upgrade-controller \
   >          machine-config-controller-manifest cluster-upgrade-controller-manifest; do
   >   kubectl -n default debug "node/${NODE}" --image="${DEBUG_IMAGE}" --quiet --attach=true -- \
