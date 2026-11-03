@@ -279,15 +279,36 @@ spec:
   > **Prerequisite.** `DEBUG_IMAGE` has no default and must be set
   > explicitly: the image must already be present on the node, or
   > pullable by that cluster, *before* this procedure starts, and must
-  > contain both a shell and `chroot`. A distroless image will not work —
-  > it has neither. On a cluster with public registry access `busybox` is
+  > contain both a shell and `chroot`. A distroless image has neither and
+  > will not work. On a cluster with public registry access `busybox` is
   > sufficient, and is what CI uses. **On an air-gapped cluster `busybox`
   > will not pull**: the debug pod sits in `ImagePullBackOff` before any
-  > manifest is copied, so an air-gapped cluster must mirror a suitable
-  > image into its own registry or use one already preloaded on the nodes.
-  > Establish which image that is for your environment before you begin;
-  > this runbook does not name one, because whether a given image carries
-  > a shell and `chroot` has to be checked rather than assumed.
+  > manifest is copied.
+  >
+  > On an air-gapped cluster, use `cluster-upgrade-controller`'s own image.
+  > It carries `/bin/sh` and `/usr/sbin/chroot`, and it is guaranteed to be
+  > on the node — this procedure exists because that controller is running
+  > an older version than the one staged on disk, so its image is pulled
+  > and present. Read its exact ref from the running Deployment rather than
+  > typing a version, so nothing here goes stale:
+  >
+  > ```sh
+  > DEBUG_IMAGE=$(kubectl -n mke get deploy cluster-upgrade-controller \
+  >   -o jsonpath='{.spec.template.spec.containers[0].image}')
+  > ```
+  >
+  > Read it from the cluster rather than from the node's `versions.txt`:
+  > that file is on the node, and reaching the node is what the debug pod
+  > is for.
+  >
+  > `mirantis/ucp` also carries both and is a sound second choice.
+  > **Two preloaded images do not work and both look as if they should:**
+  > `rancher/kubectl` contains only the `kubectl` binary and two `/etc`
+  > files — no shell — so `chroot` fails in a way that resembles a
+  > permissions or path error rather than a missing binary; and
+  > `machine-config-controller` has a large filesystem but no shell and no
+  > `chroot`, while the `machine-config-controller/agent` image beside it
+  > has both.
   >
   > The namespace must permit a privileged pod with a host mount. The run
   > this procedure is derived from used `-n default` with the MKE admin
