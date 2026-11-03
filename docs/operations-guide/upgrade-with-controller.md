@@ -300,14 +300,27 @@ spec:
   >
   > ```sh
   > SELECTOR=$(kubectl -n mke get deploy cluster-upgrade-controller \
-  >   -o go-template='{{range $k, $v := .spec.selector.matchLabels}}{{$k}}={{$v}},{{end}}' \
-  >   | sed 's/,$//')
+  >   -o go-template='{{range $k, $v := .spec.selector.matchLabels}}{{$k}}={{$v}},{{end}}')
+  > SELECTOR=${SELECTOR%,}
+  > : "${SELECTOR:?cluster-upgrade-controller Deployment lookup returned no selector}"
   > POD=$(kubectl -n mke get pod -l "$SELECTOR" \
-  >   -o jsonpath='{.items[0].metadata.name}')
+  >   --field-selector=status.phase=Running \
+  >   -o custom-columns='NAME:.metadata.name,READY:.status.conditions[?(@.type=="Ready")].status' \
+  >   --no-headers | awk '$2 == "True" {print $1; exit}')
+  > : "${POD:?no Running and Ready cluster-upgrade-controller pod found}"
   > NODE=$(kubectl -n mke get pod "$POD" -o jsonpath='{.spec.nodeName}')
   > DEBUG_IMAGE=$(kubectl -n mke get pod "$POD" \
   >   -o jsonpath='{.spec.containers[0].image}')
   > ```
+  >
+  > Both guards matter because the failure they prevent is silent rather
+  > than loud. An empty `SELECTOR` is not an error to `kubectl`: `-l ''`
+  > matches every pod, so the first unrelated pod's node and image would be
+  > used and would pass every later check. Selecting a `Running` and `Ready`
+  > pod rather than the first one matters here specifically because this
+  > procedure runs *during* a controller upgrade — a rollout can be in
+  > flight, in which case the selector returns the ready old pod and its
+  > pending replacement together, while `READY 1/1` still reads as expected.
   >
   > `NODE` set here replaces the `kubectl get nodes … | head -1` selection
   > used below; the debug pod must land on the node whose image availability
