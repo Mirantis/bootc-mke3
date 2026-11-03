@@ -301,7 +301,7 @@ spec:
   > ```sh
   > cuc_debug_env() {
   >   local selector pod
-  >   unset CUC_DEBUG_READY NODE DEBUG_IMAGE
+  >   unset CUC_DEBUG_READY CUC_MANIFESTS_FRESH NODE DEBUG_IMAGE
   >   selector=$(kubectl -n mke get deploy cluster-upgrade-controller \
   >     -o go-template='{{range $k, $v := .spec.selector.matchLabels}}{{$k}}={{$v}},{{end}}') || return 1
   >   selector=${selector%,}
@@ -374,7 +374,11 @@ spec:
   >     tmp=$(mktemp "./${m}.yaml.XXXXXX") || return 1
   >     if kubectl -n default debug "node/${NODE}" --image="${DEBUG_IMAGE}" --quiet --attach=true -- \
   >          chroot /host cat "/usr/share/mke-controllers/manifests/${m}.yaml" > "$tmp" && [ -s "$tmp" ]; then
-  >       mv "$tmp" "${m}.yaml"
+  >       if ! mv "$tmp" "${m}.yaml"; then
+  >         rm -f "$tmp"
+  >         echo "copy of ${m}.yaml failed; any existing copy was left untouched" >&2
+  >         return 1
+  >       fi
   >     else
   >       rm -f "$tmp"
   >       echo "copy of ${m}.yaml failed; any existing copy was left untouched" >&2
