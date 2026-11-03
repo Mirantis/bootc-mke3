@@ -1,7 +1,7 @@
 # MKE Upgrade flag
 # Use this flag to force the minimum system requirements for MKE installation whenever your machine is
 # below the minimum requirements, less than 8GB RAM and 40GB hard disk. This flag is useful for testing mainly.
-# More on the subject read here: https://docs.mirantis.com/mke/3.7/install/system-requirements.html
+# More on the subject read here: https://docs.mirantis.com/mke/3.9/install/system-requirements.html
 mke_upgrade_flags: [--force-minimums]
 
 # MKE upgrade check flags. Use this variable for injecting the required flags for the upgrade check subcommand used for mke pre-upgrade ansible task.
@@ -10,8 +10,8 @@ mke_upgrade_check_flags: ["--force-minimums"]
 # Number of nodes that get upgraded in parallel
 upgrade_worker_batch_size: 3
 
-# OCI image reference to be upgraded. Eg. registry.mirantis.com/bootc-mke3/r9.8-mcr29.6.1-mke3.9.5-cloud:20260814-15
+# OCI image reference to be upgraded. Eg. registry.mirantis.com/bootc-mke3/r9.8-mcr29.8.0.0-mke3.9.7-bare:20261008-90
 # The tag is a unique per-build identifier (not a version string) -- get the exact
-# current value from the release notes / Assets table, not by guessing.
+# current value from the release notes (https://github.com/Mirantis/bootc-mke3/releases), not by guessing.
 # For more details on how to use this variable, refer to the upgrade runbook at https://github.com/Mirantis/mkex/blob/master/docs/runbooks/upgrade-mkex.md.
 bootc_image_ref: ''

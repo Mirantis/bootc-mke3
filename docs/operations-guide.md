@@ -24,7 +24,7 @@ Day-2 operations for a running `bootc-mke3` MKE 3 cluster: accessing it, growing
 ## Security
 
 - [Security Analysis: Cluster Management Controllers](operations-guide/controller-security-analysis.md) — trust model and risk register for `cluster-upgrade-controller` and `machine-config-controller`.
-- [Verify bootc-mke3 image signatures](operations-guide/verify-image-signatures.md) — `cosign verify` at mirroring, pull, and install/switch time.
+- [Verify bootc-mke3 image signatures](operations-guide/verify-image-signatures.md) — `cosign verify` at mirroring, pull, and install/switch time; which controllers are signed; how to read the SBOM/CVE reports attached to releases.
 - [Harden MKE3 / Kubernetes](operations-guide/harden-mke3-kubernetes.md) — concrete steps to configure a secure baseline.
 - [Replace MKE root CA material](operations-guide/replace-mke-root-ca.md) — bring your own Cluster/etcd/Client root CA, any time after install.
 

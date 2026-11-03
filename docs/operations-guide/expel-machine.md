@@ -38,10 +38,10 @@ before expelling a manager. Removing one of three managers leaves two, which has
 > Never cordon a manager at the Swarm layer. `docker node update --availability
 > drain` against a manager evicts MKE's own components from it.
 
-Observed on MKE 3.9.5, draining a manager: the machine's Swarm `Status` went
-from `Ready` to **`Down`**, and cluster API calls through the load balancer
-began failing intermittently while the load balancer still had the machine in
-rotation. Setting `--availability active` restored it.
+Draining a manager sets the machine's Swarm `Status` to **`Down`**, and cluster
+API calls through the load balancer can fail intermittently while the load
+balancer still has the machine in rotation. Setting `--availability active`
+restores it.
 
 Demoting first avoids this entirely — a *worker* set to `drain` stays `Ready`
 and simply stops accepting tasks. So the safe sequence is **demote, then

@@ -4,7 +4,7 @@ docker_daemon_config_src: ""
 # Optional Docker daemon configuration file path on remote hosts
 docker_daemon_config_dst: "/etc/docker/daemon.json"
 # Source of the MKE config file. Config example ref:
-# https://docs.mirantis.com/mke/3.7/ops/administer-cluster/configure-an-mke-cluster/use-an-mke-configuration-file.html
+# https://docs.mirantis.com/mke/3.9/ops/administer-cluster/configure-an-mke-cluster/use-an-mke-configuration-file.html
 mke_config_src: ""
 
 # THE MCR license value
@@ -14,7 +14,7 @@ mcr_license: ""
 mke_license: ""
 
 # MKE Installation flags
-# https://docs.mirantis.com/mke/3.7/cli-ref/mke-cli-install.html
+# https://docs.mirantis.com/mke/3.9/cli-ref/mke-cli-install.html
 mke_install_flags:
   [
     '--san="{{ mke_url }}"',

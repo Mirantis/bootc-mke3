@@ -7,7 +7,7 @@ This repository contains a collection of tool, utilities and guides for managing
 ## Table of Contents
 
 - [Installation Guide](#installation-guide)
-  - [Assets](#assets)
+  - [Releases](#releases)
 - [Operations Guide](#operations-guide)
 - [Troubleshooting Guide](#troubleshooting-guide)
 
@@ -15,18 +15,12 @@ This repository contains a collection of tool, utilities and guides for managing
 
 Installation covers everything from provisioning bare infrastructure to a running MKE cluster: registry and machine requirements, provisioning with Terraform (vSphere/AWS) or manually, running the Ansible installer, and the controllers deployed by default post-install. See the full guide at [Installation guide documentation pages](docs/installation-guide.md).
 
-### Assets
+### Releases
 
-Mirantis provides assets for provisioning `bootc-mke3` on different providers. Assets consist of bootable images that can be used to provision a virtual machine or bare-metal machine.
-
-| Type  | Download link | Description | Mirantis product's version |
-| :---- | ------------- | ----------- | -------------------------- |
-| ISO   | [Link](https://get.mirantis.com/bootc-mke3/images/bootc-mke3-r9.8-mcr29.6.1.1-mke3.9.6-bare-simple.iso)      | **Simple** ISO with basic kickstart embedded. Unattended Anaconda installation will be performed. See [this document](docs/installation-guide/iso-editions.md#simple) to get more details about Simple image edition. | MCR 29.6.1.1 / MKE 3.9.6 |
-| ISO   | [Link](https://get.mirantis.com/bootc-mke3/images/bootc-mke3-r9.8-mcr29.6.1.1-mke3.9.6-bare-generic.iso)      | **Generic** ISO without any customisation. See [this document](docs/installation-guide/iso-editions.md#generic-image-customisation) to get the details on how to properly customise it | MCR 29.6.1.1 / MKE 3.9.6 |
-| QCOW2 | [Link](https://get.mirantis.com/bootc-mke3/images/bootc-mke3-r9.8-mcr29.6.1.1-mke3.9.6-cloud.qcow2)      | Standard QEMU/KVM bootable image | MCR 29.6.1.1 / MKE 3.9.6 |
+Mirantis publishes `bootc-mke3` assets on the [Releases page](https://github.com/Mirantis/bootc-mke3/releases). That is the place to find them; this repository does not list download links or versions. Each release notes the MCR and MKE versions it contains, the OCI image references (`registry.mirantis.com/bootc-mke3/...`, including the exact build tag), download links for the bootable ISO and QCOW2 images, the versions of the preloaded controllers, and the SBOM/CVE reports (see [Verify bootc-mke3 image signatures](docs/operations-guide/verify-image-signatures.md#sbom-and-cve-scan-reports-on-github-releases)). Not every release covers every platform; check the `Platforms` line of the release you pick.
 
 > [!NOTE]
-> **Simple** ISO edition is used mostly for demo/test purposes. For production-grade clusters consider using **Generic** ISO.
+> **Simple** ISO edition is used mostly for demo/test purposes. For production-grade clusters consider using **Generic** ISO. See [ISO editions](docs/installation-guide/iso-editions.md).
 
 ## Operations Guide
 

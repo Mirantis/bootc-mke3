@@ -12,7 +12,7 @@
 #
 # EDIT BEFORE USE: the image tag must match the cluster's MKE version
 # (docker version --format '{{.Server.Version}}' with the client bundle sourced
-# reports e.g. ucp/3.9.5).
+# reports e.g. ucp/3.9.7).
 apiVersion: v1
 kind: Pod
 metadata:
@@ -42,7 +42,7 @@ spec:
     - operator: Exists
   containers:
     - name: shell
-      image: mirantis/ucp-dsinfo:3.9.5
+      image: mirantis/ucp-dsinfo:3.9.7
       command: ["sleep", "infinity"]
       stdin: true
       tty: true

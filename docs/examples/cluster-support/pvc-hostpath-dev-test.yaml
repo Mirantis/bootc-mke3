@@ -8,7 +8,7 @@
 # NOT a production destination, and NOT a shared one. The volume is a directory
 # on whichever node the capture Pod runs on, so a capture across N nodes leaves
 # N unrelated directories, each holding only that node's bundle. It does not
-# collect bundles into one place — verified on MKE 3.9.5, see the runbook's PVC
+# collect bundles into one place; see the runbook's PVC
 # section. Use it to prove the destination works, or when capturing a single
 # node. For a genuinely shared destination, use storage that is really
 # ReadWriteMany (NFS, CephFS, EFS-class).

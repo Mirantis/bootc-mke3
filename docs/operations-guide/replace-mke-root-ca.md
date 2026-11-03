@@ -35,9 +35,8 @@ standalone `mke-custom-ca-playbook.yml`.
    > and the `ca` CLI reference both state the etcd CA's required CN is
    > `MKE etcd Root CA` — that's what MKE's own self-generated etcd CA
    > actually carries. But the `ca --etcd` command's validation of a
-   > *replacement* cert checks for `swarm-ca` instead. Confirmed against a
-   > live MKE 3.9.3 cluster: a cert with CN `MKE etcd Root CA` is rejected
-   > with `provided cert and key are invalid: root CA certificate has a
+   > *replacement* cert checks for `swarm-ca` instead: a cert with CN
+   > `MKE etcd Root CA` is rejected with `provided cert and key are invalid: root CA certificate has a
    > wrong common name: expected "swarm-ca", actual "MKE etcd Root CA"`; a
    > cert with CN `swarm-ca` is accepted and, after the reboot cycle, is
    > exactly what ends up on disk at
@@ -110,8 +109,7 @@ standalone `mke-custom-ca-playbook.yml`.
   [Access the cluster](access-cluster.md)).
 - Replacing the **Cluster** or **etcd Root CA** does not by itself invalidate
   client bundles, but causes the restarts/reboots described above.
-- Verified against a live MKE 3.9.3 cluster for all three CA types: after
-  the run, the on-disk cert for each (`/var/lib/docker/swarm/certificates/swarm-root-ca.crt`
+- For all three CA types, after the run the on-disk cert for each (`/var/lib/docker/swarm/certificates/swarm-root-ca.crt`
   for Cluster, `/var/lib/docker/volumes/ucp-etcd-root-ca/_data/cert.pem` for
   etcd, `/var/lib/docker/volumes/ucp-client-root-ca/_data/cert.pem` for
   Client) has the exact SHA-256 fingerprint of the supplied cert, `docker
