@@ -14,32 +14,12 @@ No SSH and no Ansible inventory are required — only `kubectl` access via the
 
 ## Prerequisites
 
-1. **A manual MKE backup must already exist** before creating the CR. The
-   automated `mke3-backup` step runs early in the chain (right after the
-   optional `mke3-docker-config` step, before `bootc-os`/`mke3-verify-environment`),
-   but the backup-presence check comes from `mirantis/ucp upgrade`'s own
-   Pre-Upgrade Checks, embedded in the **`mke3-upgrade`** step — it does not
-   create a backup itself, only requires one already be present. On each manager:
-
-   ```sh
-   sudo mkdir -p <backup-dir> && sudo chmod o+w <backup-dir>
-   docker run --rm --log-driver none \
-     --security-opt label=disable \
-     -v /var/run/docker.sock:/var/run/docker.sock \
-     -v <backup-dir>:/backup \
-     mirantis/ucp:<current-version> backup --no-passphrase --file <name>.tar
-   ```
-
-   The container writes as a non-root uid, hence the `chmod o+w` on the host
-   backup directory. `--security-opt label=disable` is required: Rocky 9 bootc
-   enforces SELinux, which otherwise denies the container access to the Docker
-   socket. This is required regardless of which upgrade mechanism you use.
-2. `cluster-upgrade-controller` installed in the cluster — installed by
+1. `cluster-upgrade-controller` installed in the cluster — installed by
    default as part of a standard [install](../installation-guide/install-bootc-mke3.md).
-3. A [client bundle](access-cluster.md) with `kubectl` configured against the
+2. A [client bundle](access-cluster.md) with `kubectl` configured against the
    cluster (`export KUBECONFIG=<bundle>/kube.yml`). No SSH to cluster
    machines is required for this path.
-4. Workers must be reachable from the manager(s) on the full
+3. Workers must be reachable from the manager(s) on the full
    `mke_worker_internal`/`mke_worker_self` port sets — see the [port
    requirements](join-machines-no-touch.md#port-requirements) table for the
    complete list, which goes beyond the minimal ports required just for
@@ -48,7 +28,7 @@ No SSH and no Ansible inventory are required — only `kubectl` access via the
    blocked at the network layer (security group, firewall between subnets,
    etc.) the step fails naming the blocked ports and node(s), even if the
    workers' own OS firewall already allows them.
-5. Read access to the target bootc OS image and MKE upgrade image referenced
+4. Read access to the target bootc OS image and MKE upgrade image referenced
    below (see [registry requirements](../installation-guide/provisioning.md#registry)).
 
 ## Procedure
@@ -211,7 +191,7 @@ spec:
     version: "<target MKE version>"
     mke3:
       upgradeFlags: ["--force-minimums"]
-      backupDir: <backup-dir>                  # same dir used for the manual backup above
+      backupDir: <backup-dir>
       controllersUpgrade:
         enabled: true                          # see callout below before omitting this
   controlPlaneConcurrency: 1
@@ -221,8 +201,6 @@ spec:
 - `spec.os` is optional — omit it to upgrade the MKE product only, leaving
   the OS/MCR version unchanged.
 - `backupDir` is optional — the CRD defaults it to `/var/lib/mke-backup`.
-  Set it explicitly (as above) only if your manual backup (prerequisite #1)
-  used a different directory.
 - `controlPlaneConcurrency` and `workerConcurrency` bound how many nodes of
   each role the controller drives through the upgrade steps at once. Manager
   nodes are always upgraded serially before workers start; workers proceed in
