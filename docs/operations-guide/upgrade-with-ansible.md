@@ -48,6 +48,15 @@ Once all the variables are set (if needed), perform next two steps:
    root) skips `ansible.cfg` and will fail with `Host key verification
    failed` against newly provisioned hosts.
 
+### Backups taken by the playbook
+
+Before the managers are switched to the new image, `mke-upgrade-playbook.yml` runs `mke-backup-playbook.yml` on every manager. It writes two root-only (`0600`) archives to `mke_backup_dir` (default `/var/lib/mke-ansible-backup`, set in `vars/common-vars.yml`):
+
+- `mke-<MKE version>-backup-<timestamp>.tar`: the MKE backup.
+- `swarm-<engine version>-backup-<timestamp>.tar.tgz`: the Swarm state from `/var/lib/docker/swarm/`.
+
+The directory is on persistent storage, so the archives survive the manager reboots in this procedure. The playbook never deletes them, and they stay on the manager's disk until you delete them. They hold the MKE CA private keys. Delete them once you no longer need them. The directory is not `/var/lib/mke-backup`, the default `backupDir` of `cluster-upgrade-controller`, so a restore by the controller never picks up these archives.
+
 ## Expected Results
 
 Ansible playbook runs without error. In order to verify the upgrade, go to the MKE UI (`mke_url` in ansible inventory file) and log in with the credentials specified in `vars/mke-creds.yml` and make sure version is upgraded as expected.
