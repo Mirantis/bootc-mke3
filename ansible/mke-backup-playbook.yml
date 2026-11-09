@@ -12,7 +12,7 @@
   vars_files:
     - vars/common-vars.yml
   vars:
-    backup_filename: '/tmp/mke-{{ current_mke_version.stdout }}-backup-{{ hostvars["localhost"]["start_timestamp"] }}.tar'
+    backup_filename: '{{ mke_backup_dir }}/mke-{{ current_mke_version.stdout }}-backup-{{ hostvars["localhost"]["start_timestamp"] }}.tar'
   tasks:
     - name: Get current MKE version
       ansible.builtin.include_tasks: tasks/helpers/get_current_mke_version.yml
@@ -28,6 +28,8 @@
   serial: 1
   vars_files:
     - vars/common-vars.yml
+  vars:
+    swarm_backup_filename: '{{ mke_backup_dir }}/swarm-{{ current_engine_version.stdout }}-backup-{{ hostvars["localhost"]["start_timestamp"] }}.tar.tgz'
   tasks:
     - name: Get current Docker Engine version
       ansible.builtin.include_tasks: tasks/helpers/get_current_engine_version.yml

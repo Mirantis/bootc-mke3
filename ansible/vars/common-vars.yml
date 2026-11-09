@@ -13,6 +13,21 @@ mcr_license: ""
 # The MKE license value
 mke_license: ""
 
+# Directory on each manager where mke-backup-playbook.yml writes the MKE
+# (mke-<version>-backup-<timestamp>.tar) and Swarm
+# (swarm-<version>-backup-<timestamp>.tar.tgz) archives. Must be persistent:
+# /tmp is a tmpfs on bootc-mke3 and is wiped by the reboots that follow the
+# backup in mke-upgrade-playbook.yml and mke-custom-ca-playbook.yml. Created
+# root:root 0700; archives are 0600. Archives are never deleted by the
+# playbooks -- remove old ones yourself.
+#
+# Deliberately NOT /var/lib/mke-backup, the default backupDir of
+# cluster-upgrade-controller: its mke3-restore step restores the last
+# mke-*-backup-*.tar in that directory in name order, whichever tool wrote it,
+# so a playbook archive there could be restored in place of the one taken by
+# the controller during the same upgrade attempt.
+mke_backup_dir: /var/lib/mke-ansible-backup
+
 # MKE Installation flags
 # https://docs.mirantis.com/mke/3.9/cli-ref/mke-cli-install.html
 mke_install_flags:

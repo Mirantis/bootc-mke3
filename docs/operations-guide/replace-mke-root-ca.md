@@ -61,6 +61,8 @@ standalone `mke-custom-ca-playbook.yml`.
    ansible-playbook -i <path-to-your-inventory> mke-backup-playbook.yml
    ```
 
+   The playbook writes root-only (`0600`) archives on every manager to `mke_backup_dir` (default `/var/lib/mke-ansible-backup`, set in `vars/common-vars.yml`): `mke-<MKE version>-backup-<timestamp>.tar` and `swarm-<engine version>-backup-<timestamp>.tar.tgz`. The directory is persistent, so the archives survive the manager reboots in step 3. The playbook never deletes them, and they stay on the manager's disk until you delete them. They hold the MKE CA private keys, so delete them once the new CAs are verified and you no longer need them.
+
    If you skip this, set `mke_custom_ca_force_recent_backup: true` in step 2
    — otherwise the `ca` command refuses to run.
 

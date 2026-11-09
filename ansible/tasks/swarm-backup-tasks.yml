@@ -1,3 +1,12 @@
+- name: Create backup directory
+  ansible.builtin.file:
+    path: "{{ mke_backup_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+  become: true
+
 - name: Stop docker service
   ansible.builtin.systemd_service:
     name: docker
@@ -10,7 +19,7 @@
     argv:
       - tar
       - -cvzf
-      - "/tmp/swarm-{{ current_engine_version.stdout }}-backup-{{ hostvars['localhost']['start_timestamp'] }}.tar.tgz"
+      - "{{ swarm_backup_filename }}"
       - /var/lib/docker/swarm/
   become: true
 
@@ -18,4 +27,12 @@
   ansible.builtin.systemd_service:
     name: docker
     state: started
+  become: true
+
+- name: Restrict Swarm backup to root
+  ansible.builtin.file:
+    path: "{{ swarm_backup_filename }}"
+    owner: root
+    group: root
+    mode: "0600"
   become: true
