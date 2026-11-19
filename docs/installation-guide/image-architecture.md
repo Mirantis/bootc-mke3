@@ -1,68 +1,68 @@
 # Image architecture
 
-This document describes what a `bootc-mke3` image ships, which parts of it
-are fixed at build time, and where the supported customisation points are.
-It is aimed at operators deciding what they can rely on being present on a
-node and what they must add themselves at provision time.
+This document describes what a `bootc-mke3` image contains, which parts of
+it the build fixes, and where the supported customisation points
+are. It is for operators who must know what is always present on a node
+and what they must add at provision time.
 
 ## Filesystem contract
 
-`bootc-mke3` is a bootc/ostree image, which gives the filesystem three
-distinct behaviours:
+`bootc-mke3` is a bootc/ostree image. The filesystem has three different
+behaviours:
 
-- **`/usr` is immutable and replaced wholesale on upgrade.** Nothing written
-  there at runtime survives; everything the image vendor ships lives there.
-- **`/etc` is three-way merged on upgrade.** Operator edits survive, but a
-  file that the image also ships and the operator has modified stops
-  tracking the image's own updates to that file.
+- **`/usr` is immutable. The upgrade replaces it completely.** Data that
+  a process writes there at runtime does not survive. The image vendor puts
+  all vendor files there.
+- **The upgrade does a three-way merge of `/etc`.** Operator edits survive. If
+  the image also contains a file and the operator changed it, that file
+  does not get the image updates to that file.
 - **`/var` is machine-local** and persists across upgrades.
 
-The consequence for configuration: vendor-supplied config ships under
-`/usr/lib/...`, and operator overrides belong in the corresponding
-`/etc/...` drop-in directory. Every customisation point below follows that
-split.
+For configuration, vendor-supplied config is in `/usr/lib/...`. Put
+operator overrides in the corresponding `/etc/...` drop-in directory. Each
+customisation point below follows this split.
 
 ## Kernel modules
 
-This is a consequential part of the image for cluster networking, because
-the module set available to a node is largely fixed at boot.
+This part of the image is important for cluster networking, because the
+module set that is available to a node is mostly fixed at boot.
 
 ### The allowlist and the lockdown latch
 
 | Path | Role |
 |---|---|
-| `/usr/lib/modules-load.d/mke-modules.conf` | Allowlist of modules loaded at boot by `systemd-modules-load.service` |
-| `/usr/lib/dracut/dracut.conf.d/mke-modules.conf` | `add_drivers+=` mirror of the same list, embedding those `.ko` files in the initramfs (`dracut --regenerate-all --force` runs at image build) |
-| `/usr/lib/sysctl.d/20-secure-kernel-params.conf` | Sets `kernel.modules_disabled`, alongside `kernel.dmesg_restrict` and `kernel.yama.ptrace_scope` |
+| `/usr/lib/modules-load.d/mke-modules.conf` | Allowlist of modules that `systemd-modules-load.service` loads at boot |
+| `/usr/lib/dracut/dracut.conf.d/mke-modules.conf` | `add_drivers+=` mirror of the same list, which puts those `.ko` files in the initramfs (`dracut --regenerate-all --force` runs at image build) |
+| `/usr/lib/sysctl.d/20-secure-kernel-params.conf` | Sets `kernel.modules_disabled`, together with `kernel.dmesg_restrict` and `kernel.yama.ptrace_scope` |
 
-What makes the preload effective is unit ordering:
-`systemd-modules-load.service` is ordered `Before=systemd-sysctl.service`,
-so every module in any `modules-load.d` directory is loaded before
-`kernel.modules_disabled` is applied.
+The unit order makes the preload effective.
+`systemd-modules-load.service` runs `Before=systemd-sysctl.service`.
+Therefore the system loads every module in any `modules-load.d` directory
+before it applies `kernel.modules_disabled`.
 
 > [!IMPORTANT]
-> **Current images ship `kernel.modules_disabled = 0`**, so modules load on
-> demand after boot. The value was `1` on images built before
+> **Current images have `kernel.modules_disabled = 0`**, so modules load
+> on demand after boot. The value was `1` on images from builds before
 > `bootc-mirantis` commit `4a31416` (2026-09-28). Read the live value with
-> `sysctl kernel.modules_disabled` before relying on either behaviour.
+> `sysctl kernel.modules_disabled` before you rely on either behaviour.
 >
-> Where it is `1` it is a **one-way latch**: no module can be loaded for the
-> remainder of the boot session — not by `modprobe`, not by a kernel
-> autoload triggered on demand, and not by any sysctl change,
-> `MachineConfigChange` included. The only way to gain a module is to have
-> it listed before the latch applies, which in practice means changing the
-> module list and rebooting.
+> Where the value is `1`, it is a **one-way latch**. The kernel can load no module
+> for the remainder of the boot session. `modprobe` cannot load a module,
+> an on-demand kernel autoload cannot load a module, and a
+> sysctl change cannot load a module. A `MachineConfigChange` also cannot
+> load a module. The only way to get a module is to list it before the latch
+> applies. In practice, this means that you change the module list and reboot.
 
-The practical symptom of a missing module is a workload failing to program
-the dataplane rather than an obvious module error — for example
-kube-proxy logging `iptables-restore: Couldn't load match 'statistic'`, or
-`mount.nfs` reporting `No such device` on a node that has `nfs-utils`
+When a module is missing, the practical symptom is a workload that cannot
+program the dataplane. It is not an obvious module error. For example,
+kube-proxy logs `iptables-restore: Couldn't load match 'statistic'`. Or
+`mount.nfs` reports `No such device` on a node that has `nfs-utils`
 installed and the `.ko` files on disk.
 
 ### Inspecting the effective list
 
-The allowlist file is the authoritative record and its contents change
-between releases, so it is not reproduced here. Read it off any booted
+The allowlist file is the authoritative record. Its contents change
+between releases, so this document does not copy it. Read it on any booted
 node:
 
 ```sh
@@ -70,118 +70,126 @@ cat /usr/lib/modules-load.d/mke-modules.conf
 lsmod
 ```
 
-The list covers, in broad terms: container and overlay filesystems
-(`overlay`, `loop`, `fuse`, `vfat`), L2/bridge networking, the nftables
-stack used by the `iptables-nft` backend, netfilter/conntrack, the
-iptables/xtables and ipset extensions MKE and Calico program, IPv6
-netfilter, IPVS and SCTP match support, Calico's encapsulation devices
-(IPIP, VXLAN, WireGuard), traffic-control modules for Calico bandwidth QoS,
-TUN/TAP, kernel TLS, and device mapper. Hardware and root-filesystem
-modules are deliberately omitted — dracut and udev load those from detected
-hardware.
+In broad terms, the list includes these items:
+
+- container and overlay filesystems (`overlay`, `loop`, `fuse`, `vfat`)
+- L2/bridge networking
+- the nftables stack that the `iptables-nft` backend uses
+- netfilter/conntrack
+- the iptables/xtables and ipset extensions that MKE and Calico program
+- IPv6 netfilter
+- IPVS and SCTP match support
+- the Calico encapsulation devices (IPIP, VXLAN, WireGuard)
+- traffic-control modules for Calico bandwidth QoS
+- TUN/TAP, kernel TLS, and device mapper
+
+Hardware and root-filesystem modules are intentionally not in the list.
+dracut and udev load those modules for the hardware that they detect.
 
 > [!NOTE]
-> The list is extended as products need it — Calico Enterprise's
-> requirements, including `ipip` for its default encapsulation mode, were
-> added on 2026-09-08 and are present in every image built after that
-> date. On an older image, a module the list does not yet carry has to be
-> added through the extension point below, which costs a reboot. Check the
-> file on the node against what your workloads need rather than assuming a
-> given release's contents.
+> `bootc-mirantis` extends the list when products need it. It added the Calico Enterprise
+> requirements, including `ipip` for its default encapsulation mode, on
+> 2026-09-08. They are in every image that `bootc-mirantis` built after that
+> date. On an older image, you must add a module that the list does not yet
+> contain through the extension point below. This needs a reboot.
+> Compare the file on the node with what your workloads need. Do not assume
+> the contents of a given release.
 
 ### Adding modules
 
-The supported extension point is a drop-in in `/etc/modules-load.d/`, one
-module name per line — for example `/etc/modules-load.d/site-extra.conf`
-containing:
+The supported extension point is a drop-in in `/etc/modules-load.d/`, with
+one module name on each line. For example, `/etc/modules-load.d/site-extra.conf`
+with this content:
 
 ```
 nfs
 nfsv4
 ```
 
-Files there are read by the same `systemd-modules-load.service`, so they
-benefit from the same `Before=systemd-sysctl.service` ordering. When the
-drop-in takes effect depends on when it is created:
+The same `systemd-modules-load.service` reads the files there, so they
+have the same `Before=systemd-sysctl.service` order. The time when the
+drop-in takes effect depends on when you create it:
 
 | Created | Effective |
 |---|---|
-| Kickstart `%post` | **First boot**, no extra reboot — the drop-in is written into the installed tree before it has booted |
-| Cloud-init (`write_files`/`runcmd`) | **Second boot** — both run after `systemd-modules-load.service` has already finished, and creating a drop-in does not re-run it. For the module on first boot, `modprobe` it alongside the write (possible while `kernel.modules_disabled` is `0`), or reboot after provisioning; under the lockdown a reboot is the only route |
-| On an already-running node | **After one reboot** — or immediately via `modprobe` while `kernel.modules_disabled` is `0` |
+| Kickstart `%post` | **First boot**, no extra reboot. The installer writes the drop-in into the installed tree before the first boot |
+| Cloud-init (`write_files`/`runcmd`) | **Second boot**. Both run after `systemd-modules-load.service` is already complete, and a new drop-in does not run it again. To get the module on first boot, run `modprobe` for it together with the write (possible while `kernel.modules_disabled` is `0`), or reboot after provisioning. Under the lockdown, a reboot is the only method |
+| On an already-running node | **After one reboot**, or immediately with `modprobe` while `kernel.modules_disabled` is `0` |
 
-Because a module is only loadable if its `.ko` is reachable, this works for
-modules present in the image but unloaded; it cannot add a module the image
-does not ship.
+A module is loadable only if its `.ko` is reachable. Therefore this method
+works for modules that are in the image but not loaded. It cannot add a
+module that the image does not contain.
 
-For provision-time recipes see
-[Common kickstart customisations](iso-editions.md#common-kickstart-customisations),
-and for the cloud-init equivalent — the authoritative worked procedure,
-including when the drop-in takes effect on that path — see
+For provision-time recipes, see
+[Common kickstart customisations](iso-editions.md#common-kickstart-customisations).
+For the cloud-init equivalent, see
 [Join machines with no-touch join](../operations-guide/join-machines-no-touch.md).
-Across an existing cluster, have `machine-config-controller` maintain the
-drop-in and drive the reboot as a separate resource rather than editing
-nodes by hand — see
+That document is the authoritative worked procedure and shows when the
+drop-in takes effect on that path.
+For an existing cluster, have `machine-config-controller` maintain the
+drop-in and start the reboot as a separate resource. Do not edit nodes by
+hand. See
 [Machine configuration changes](../operations-guide/machine-config-operations.md)
 and the worked NFS example in
 [Collect support bundles](../operations-guide/collect-support-bundles.md).
 
 ## NetworkManager
 
-NetworkManager is installed and enabled. The image ships
-`/usr/lib/NetworkManager/conf.d/10-calico-unmanaged.conf`, which marks
-Calico's interfaces unmanaged so NetworkManager does not compete with
-Calico for their configuration:
+The image installs and enables NetworkManager. The image contains
+`/usr/lib/NetworkManager/conf.d/10-calico-unmanaged.conf`. This file marks
+the Calico interfaces as unmanaged, so NetworkManager does not compete
+with Calico for their configuration:
 
 ```
 [keyfile]
 unmanaged-devices=interface-name:cali*;interface-name:tunl*;interface-name:vxlan.calico;interface-name:vxlan-v6.calico;interface-name:wireguard.cali;interface-name:wg-v6.cali
 ```
 
-The list covers the veth pairs (`cali*`) and the tunnel devices of every
+The list includes the veth pairs (`cali*`) and the tunnel devices of each
 encapsulation mode: IPIP (`tunl*`), VXLAN (`vxlan.calico`,
 `vxlan-v6.calico`) and WireGuard (`wireguard.cali`, `wg-v6.cali`).
 
-To override it, drop a file of the same name into
-`/etc/NetworkManager/conf.d/`, which wins over the `/usr/lib` copy.
+To override the file, put a file with the same name in
+`/etc/NetworkManager/conf.d/`. It has priority over the `/usr/lib` copy.
 
 > [!WARNING]
-> `/usr/lib` snippets are parsed **first**, and `unmanaged-devices` is
-> replaced rather than merged. Any snippet of your own in `/etc` or `/run`
-> that sets `unmanaged-devices` discards the list above — restate the Calico
-> interfaces in it, or NetworkManager resumes managing them.
+> NetworkManager parses `/usr/lib` snippets **first**. It replaces
+> `unmanaged-devices` and does not merge it. A snippet of your own in `/etc`
+> or `/run` that sets `unmanaged-devices` discards the list above. In that
+> snippet, list the Calico interfaces again. If you do not, NetworkManager
+> starts to manage them.
 
 ## Baked services
 
 | Unit | Purpose |
 |---|---|
-| `mke-images.service` | On first boot, loads the MKE image tarball from `/usr/share/mke/` and every controller image tarball from `/usr/share/mke-controllers/images/` into Docker |
-| `swarm-join.service` (with `/usr/libexec/swarm-join`) | No-touch worker join, gated on the `/var/lib/mke3/joined` sentinel — see [no-touch join](../operations-guide/no-touch-join.md) |
-| `cri-dockerd-mke.service` / `cri-dockerd-mke.socket` | MKE's CRI shim for the Docker engine |
+| `mke-images.service` | On first boot, loads the MKE image tarball from `/usr/share/mke/` and each controller image tarball from `/usr/share/mke-controllers/images/` into Docker |
+| `swarm-join.service` (with `/usr/libexec/swarm-join`) | No-touch worker join, gated on the `/var/lib/mke3/joined` sentinel. See [no-touch join](../operations-guide/no-touch-join.md) |
+| `cri-dockerd-mke.service` / `cri-dockerd-mke.socket` | The MKE CRI shim for the Docker engine |
 
-Only `mke-images.service` and `swarm-join.service` are enabled at image
-build time (`systemctl enable mke-images swarm-join.service`). The
-`cri-dockerd-mke` units ship as definitions and are not enabled in the
-image.
+The image build enables only `mke-images.service` and `swarm-join.service`
+(`systemctl enable mke-images swarm-join.service`). The
+`cri-dockerd-mke` units are in the image as definitions. The build does not
+enable them.
 
-The image also ships:
+The image also contains:
 
 - firewalld service definitions in `/usr/lib/firewalld/services/`
   (`mke_manager_external`, `mke_manager_internal`, `mke_manager_self`,
-  `mke_worker_internal`, `mke_worker_self`). They are definitions only —
-  nothing binds them to a zone until the Ansible installer's
+  `mke_worker_internal`, `mke_worker_self`). They are definitions only.
+  Nothing binds them to a zone until the Ansible installer's
   `tasks/mke-open-ports-tasks.yml` or your own provisioning payload does.
 - sshd crypto hardening at
-  `/etc/ssh/sshd_config.d/10-crypto-hardening.conf`. This one lives in
-  `/etc`, not `/usr`, because sshd only `Include`s drop-ins from `/etc`.
+  `/etc/ssh/sshd_config.d/10-crypto-hardening.conf`. This file is in
+  `/etc`, not `/usr`, because sshd uses `Include` only for drop-ins from
+  `/etc`.
 
-Any of these units can be disabled at provision time; see
+You can disable each of these units at provision time. See
 [Common kickstart customisations](iso-editions.md#common-kickstart-customisations).
 
 ## Controller artifacts
 
-Controller images, manifests and pinned versions ship under
-`/usr/share/mke-controllers/` and are what the post-install step deploys
-from. They are described in
+Controller images, manifests and pinned versions are in
+`/usr/share/mke-controllers/`. The post-install step deploys from them.
 [Post-install controllers](install-controllers.md#in-image-sources-are-the-source-of-truth)
-and not duplicated here.
+describes them. This document does not duplicate that description.

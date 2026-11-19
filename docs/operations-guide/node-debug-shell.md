@@ -1,58 +1,62 @@
 # Open a debug shell on a node
 
-How to get a root shell on a `bootc-mke3` node through the Kubernetes API,
-without SSH. A privileged container pinned to the node gives access to the
-host's filesystem, process table, and namespaces — the operations a `bootc`
-node's immutable, SSH-less design otherwise makes awkward.
+This runbook shows how to open a root shell on a `bootc-mke3` node through the
+Kubernetes API, without SSH. A privileged container pinned to the node gives
+access to the host's filesystem, process table, and namespaces. The immutable,
+SSH-less design of a `bootc` node otherwise makes these operations difficult.
 
-Two paths are documented: `kubectl debug` for one node, and a Pod manifest for
-several nodes at once or for options `kubectl debug` does not expose.
+This runbook has two paths. Use `kubectl debug` for one node. Use a Pod
+manifest for several nodes at once or for options that `kubectl debug` does not
+show.
 
 ## Security
 
-A debug shell created here is **root-equivalent on the node it lands on**. The
-container is privileged and mounts the host root filesystem at `/host`, so it
-can read every secret on disk and enter every host namespace. Treat the ability
-to create these pods as `cluster-admin` on the cluster's nodes, and delete the
-pods when the investigation is over — nothing expires them.
+A debug shell created with this runbook is **root-equivalent on the node where
+it starts**. The container runs privileged and mounts the host root filesystem at
+`/host`. It can read every secret on disk and enter every host namespace. Treat
+the ability to create these pods as `cluster-admin` on the nodes of the
+cluster. Delete the pods when the investigation is complete. Nothing deletes
+them automatically.
 
 ## Requirements
 
-1. `kubectl` configured from an MKE client bundle — see
+1. `kubectl` configured from an MKE client bundle. See
    [Access the cluster](access-cluster.md).
-2. If support work is done by non-admin MKE users: the privilege grant from
+2. If non-admin MKE users do the support work: the privilege grant from
    [Run privileged support containers on MKE](privileged-support-containers.md).
-   An MKE admin client bundle does not need it, but a
-   non-admin user is refused without it. Either way you need the
-   `cluster-support` namespace that runbook creates.
+   An MKE admin client bundle does not need the grant. MKE refuses the pod of a
+   non-admin user without the grant. In both cases, the `cluster-support`
+   namespace that the runbook creates must exist.
 3. `envsubst` (package `gettext`/`gettext-base`) on your workstation, for the
    multi-node path.
-4. The cluster's MKE version, for the image tag. With the client bundle's
-   `env.sh` sourced (see [Access the cluster](access-cluster.md#use-docker-swarm-socket)),
-   the Swarm socket reports it:
+4. The MKE version of the cluster, for the image tag. Source the `env.sh` of
+   the client bundle (see
+   [Access the cluster](access-cluster.md#use-docker-swarm-socket)).
+   Then the Swarm socket shows the version:
 
    ```sh
    docker version --format '{{.Server.Version}}'    # e.g. ucp/3.9.7 → tag 3.9.7
    ```
 
-   The MKE UI also shows it (**Admin Settings**), and on a node itself the
-   `ucp-proxy` container carries it as the label
+   The MKE UI also shows the version (**Admin Settings**). On a node, the
+   `ucp-proxy` container carries the version as the label
    `com.docker.ucp.version`.
 
-   The image used below, `mirantis/ucp-dsinfo`, is MKE's own troubleshooting
-   image on Docker Hub, tagged by MKE version; it already contains `bash`,
-   `nsenter`, `curl`, `jq`, `tar`, and the `docker` CLI. In an air-gapped
-   cluster, mirror `mirantis/ucp-dsinfo:<MKE version>` into the local registry
-   first and use that reference instead.
+   The image that this runbook uses, `mirantis/ucp-dsinfo`, is the MKE
+   troubleshooting image on Docker Hub. It has a tag for each MKE version. It
+   already contains `bash`, `nsenter`, `curl`, `jq`, `tar`, and the `docker`
+   CLI. In an air-gapped cluster, first mirror
+   `mirantis/ucp-dsinfo:<MKE version>` into the local registry. Then use that
+   reference.
 
 ## Procedure
 
 ### Option 1 — One node, with `kubectl debug`
 
-`kubectl debug` builds the same kind of pod itself. The `sysadmin` profile
-makes the container privileged, and the node debugger always pins the pod to
-the target node, shares the host namespaces, and mounts the host root
-filesystem at `/host`:
+`kubectl debug` builds the same kind of pod. The `sysadmin` profile makes the
+container privileged. The node debugger always pins the pod to the target
+node, shares the host namespaces, and mounts the host root filesystem at
+`/host`:
 
 ```sh
 kubectl debug node/<node-name> -it -n cluster-support \
@@ -61,14 +65,15 @@ kubectl debug node/<node-name> -it -n cluster-support \
   -- bash
 ```
 
-- `-n cluster-support` is required, not cosmetic: the pod runs as that
-  namespace's `default` ServiceAccount, which is the identity the privilege
-  grant covers. Without it the pod lands in `default`, which is not granted.
-- kubectl prints a warning that the generated pod name is not a DNS label
-  (`must be no more than 63 characters must not contain dots`) whenever the node
-  name is an FQDN, as it is on AWS. It is noise from kubectl's own naming, not a
-  failure; the pod runs.
-- The pod is **not** deleted when you exit. Remove it explicitly:
+- You must set `-n cluster-support`. The pod runs as the `default`
+  ServiceAccount of that namespace, and the privilege grant covers this
+  identity. Without the option, the pod starts in the `default` namespace,
+  which has no grant.
+- When the node name is an FQDN, as on AWS, kubectl prints a warning that the
+  generated pod name is not a DNS label
+  (`must be no more than 63 characters must not contain dots`). The warning
+  comes from the naming in kubectl. It is not a failure, and the pod runs.
+- kubectl does **not** delete the pod when you exit. Delete the pod:
 
   ```sh
   kubectl -n cluster-support get pods            # find node-debugger-<node>-xxxxx
@@ -78,19 +83,21 @@ kubectl debug node/<node-name> -it -n cluster-support \
 Upstream reference:
 [debugging a node with kubectl debug](https://kubernetes.io/docs/tasks/debug/debug-cluster/kubectl-node-debug/).
 
-With an admin bundle the generated pod reaches `Running`, and
-`cat /host/etc/redhat-release` inside it prints the node's Rocky Linux release. If your MKE version refuses the pod `kubectl debug` generates, use
-option 2 — the manifest is explicit about every attribute it requests.
+With an admin bundle, the generated pod reaches `Running`. Inside the pod,
+`cat /host/etc/redhat-release` prints the Rocky Linux release of the node. If
+your MKE version refuses the pod that `kubectl debug` generates, use option 2.
+The manifest states every attribute that it requests.
 
 ### Option 2 — One or many nodes, with a manifest
 
 The template
 [`debug-shell-pod.yaml.tmpl`](../examples/cluster-support/debug-shell-pod.yaml.tmpl)
-takes two `envsubst` variables: `${NODE_NAME}` (the node to pin to) and
-`${NODE_SLUG}` (the same name with dots replaced by dashes, used for the pod
-name — a pod name containing dots becomes the pod's hostname and kubectl warns
-about it, and AWS node names are FQDNs). Edit the image tag in the template once
-to match your MKE version, then fan out over any node selector:
+takes two `envsubst` variables. `${NODE_NAME}` is the node to pin to.
+`${NODE_SLUG}` is the same name with dots replaced by dashes, and the pod name
+uses it. A pod name that contains dots becomes the hostname of the pod,
+and kubectl shows a warning. AWS node names are FQDNs. Edit the image tag in
+the template one time to match your MKE version. Then use any node selector to
+create the pods on many nodes:
 
 ```sh
 cd docs/examples/cluster-support
@@ -116,7 +123,7 @@ for node in $(kubectl get nodes -o jsonpath='{.items[*].metadata.name}'); do
 done
 ```
 
-Wait for them and attach to one:
+Wait for the pods, then attach to one of them:
 
 ```sh
 kubectl -n cluster-support wait --for=condition=ready pod -l app=node-debug-shell --timeout=120s
@@ -124,8 +131,8 @@ kubectl -n cluster-support get pods -l app=node-debug-shell -o wide
 kubectl -n cluster-support exec -it debug-shell-<node-slug> -- bash
 ```
 
-Delete all of them when finished — the pods run `sleep infinity` and persist
-until removed:
+When you finish, delete all the pods. The pods run `sleep infinity` and stay
+until you delete them:
 
 ```sh
 kubectl -n cluster-support delete pod -l app=node-debug-shell
@@ -134,12 +141,12 @@ kubectl -n cluster-support delete pod -l app=node-debug-shell
 ## Expected Results
 
 - `kubectl -n cluster-support get pods -l app=node-debug-shell -o wide` shows
-  one `Running` pod per targeted node, each on its own node.
+  one `Running` pod for each target node, each on its own node.
 - `kubectl -n cluster-support exec -it debug-shell-<node> -- cat /host/etc/os-release`
-  prints the node's Rocky Linux release — proof the mount is the real host
-  filesystem, not the container image's.
+  prints the Rocky Linux release of the node. This shows that the mount is the
+  real host filesystem and not the filesystem of the container image.
 - `nsenter --target 1 --mount --uts --ipc --net --pid -- docker ps` lists the
-  node's MKE containers.
+  MKE containers of the node.
 
 ## Using the shell
 
@@ -147,7 +154,7 @@ Inside the container, three levels of host access are available.
 
 ### Read host files directly
 
-The node's root filesystem is mounted at `/host`:
+The pod mounts the root filesystem of the node at `/host`:
 
 ```sh
 cat /host/etc/os-release            # Rocky Linux release of the bootc image
@@ -157,7 +164,8 @@ cat /host/etc/docker/daemon.json
 
 ### Run host binaries with `chroot`
 
-For host-native tooling that expects the host's own libraries and paths:
+Use this method for host-native tools that need the libraries and paths of the
+host:
 
 ```sh
 chroot /host bootc status
@@ -167,9 +175,10 @@ chroot /host systemctl list-units --failed
 
 ### Enter the host namespaces with `nsenter`
 
-Fullest access: run a command as if it were started on the host itself — the
-host's mount, UTS, IPC, network, and PID namespaces, and therefore its
-cgroups, sockets (`docker.sock`, journald), and process tree:
+This method gives the most access. It runs a command as if the command started
+on the host. The command uses the mount, UTS, IPC, network, and PID namespaces
+of the host. Therefore it also uses the cgroups, sockets (`docker.sock`,
+journald), and process tree of the host:
 
 ```sh
 nsenter --target 1 --mount --uts --ipc --net --pid -- journalctl -u kubelet --no-pager
@@ -178,14 +187,14 @@ nsenter --target 1 --mount --uts --ipc --net --pid -- systemctl status docker
 nsenter --target 1 --mount --uts --ipc --net --pid -- bash    # interactive host shell
 ```
 
-`--target 1` is PID 1 on the *host* because the pod sets `hostPID: true`. This
-is how the support-bundle collectors reach host tooling; see
+`--target 1` is PID 1 on the *host* because the pod sets `hostPID: true`. The
+support-bundle collectors use the same method to reach host tools. See
 [Collect support bundles from nodes](collect-support-bundles.md).
 
 ### Retrieve a file from the node
 
-`kubectl cp` works against the debug pod, so a file on the node can be pulled
-to your workstation without SSH:
+`kubectl cp` works with the debug pod. You can copy a file from the node to
+your workstation without SSH:
 
 ```sh
 kubectl -n cluster-support cp \
@@ -197,34 +206,35 @@ kubectl -n cluster-support cp \
 
 ### Why not just SSH to the node?
 
-`bootc-mke3` clusters are built to run with SSH disabled after install (see
-[no-touch join](no-touch-join.md)). This path uses only the MKE endpoint, is
-authorized by MKE RBAC, and is audited by the Kubernetes API server.
+We build `bootc-mke3` clusters to run with SSH disabled after installation
+(see [no-touch join](no-touch-join.md)). This path uses only the MKE endpoint.
+MKE RBAC authorizes the path, and the Kubernetes API server audits it.
 
 ### The pod stays `Pending`. Why?
 
-A pinned pod (`spec.nodeName`) is never scheduled, so `Pending` means the
-kubelet has not accepted it. Check `kubectl -n cluster-support describe pod
-<name>`: the usual causes are a taint the toleration does not cover, a
-misspelled node name, or the kubelet being down — in which case the node needs
-console access, not a debug shell.
+The scheduler never schedules a pinned pod (`spec.nodeName`). Therefore
+`Pending` means that the kubelet did not accept the pod. Run
+`kubectl -n cluster-support describe pod <name>`. The usual causes are a taint
+that the toleration does not cover, a misspelled node name, or a kubelet that
+is down. If the kubelet is down, the node needs console access, not a debug
+shell.
 
 ### The pod is rejected at creation.
 
-Admission denied it. The message names the attributes
-(`privileged hostpid hostbindmounts`) and the ServiceAccount. Re-check
-[the privilege grant](privileged-support-containers.md), especially that the
-pod is being created in `cluster-support`.
+Admission denied the pod. The message names the attributes
+(`privileged hostpid hostbindmounts`) and the ServiceAccount. Check
+[the privilege grant](privileged-support-containers.md) again. Make sure that
+you create the pod in `cluster-support`.
 
 ### Can I use a different image?
 
-Yes — any image with a shell works, and `--image` / the manifest's `image` is
-the only change needed. `mirantis/ucp-dsinfo` is documented because it is
-already mirrored in MKE environments and carries the MKE troubleshooting
-tooling. Nothing in this runbook depends on its entrypoint.
+Yes. Any image that has a shell works. Change only `--image` or the `image` of
+the manifest. This runbook uses `mirantis/ucp-dsinfo` because MKE environments
+already mirror it and it contains the MKE troubleshooting tools. Nothing in
+this runbook depends on the entrypoint of the image.
 
 ### Does anything clean these pods up automatically?
 
-No. Both paths leave the pod running until it is deleted. Include the delete
-command in your investigation notes; a forgotten privileged pod is a standing
-root shell on a node.
+No. Both paths leave the pod running until you delete it. Put the delete
+command in your investigation notes. A privileged pod that you forget is a
+standing root shell on a node.

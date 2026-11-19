@@ -1,55 +1,56 @@
 # Run privileged support containers on MKE
 
 Support tooling for a `bootc-mke3` node runs as a privileged container on that
-node: it needs the host root filesystem, the host PID namespace, and
-`nsenter --target 1` to reach host binaries such as `journalctl`, `docker`, and
-`bootc`. MKE 3 refuses such pods **when the identity creating them is not an
-MKE admin**. This runbook grants one ServiceAccount the privilege attributes
-those pods request.
+node. The container needs the host root filesystem, the host PID namespace,
+and `nsenter --target 1` to reach host binaries such as `journalctl`,
+`docker`, and `bootc`. MKE 3 refuses such pods **when the identity that creates
+them is not an MKE admin**. This runbook gives one ServiceAccount the privilege
+attributes that those pods request.
 
-Whether you need it depends on who runs the support runbooks:
+The identity that runs the support runbooks decides if you need the grant:
 
 | Creating identity | Grant needed? |
 |---|---|
-| MKE admin client bundle (what `mke-install-playbook.yml` fetches) | No — admins bypass the attribute check. |
-| Any non-admin MKE user, even with Kubernetes RBAC to create pods | **Yes** — creation is refused without it. |
+| MKE admin client bundle (what `mke-install-playbook.yml` fetches) | No. Admins bypass the attribute restriction. |
+| Any non-admin MKE user, even with Kubernetes RBAC to create pods | **Yes**. MKE refuses the creation without the grant. |
 
-Run the grant if support work is ever done by non-admin operators;
-skip it if every operator uses an admin bundle.
+Apply the grant if non-admin operators do support work. Skip it if every
+operator uses an admin bundle.
 
-It applies to both support runbooks, which create exactly these pods:
+The grant applies to both support runbooks. These runbooks create exactly these
+pods:
 
 - [Open a debug shell on a node](node-debug-shell.md)
 - [Collect support bundles from nodes](collect-support-bundles.md)
 
 ## Security
 
-**A grant made here is root-equivalent on every node the granted pods land
-on.** A privileged pod with the host root filesystem mounted can read every
-secret on disk, write every file, and enter every host namespace. Any user with
-RBAC `create` on pods in the granted namespace inherits that reach, so treat
-that permission like `cluster-admin` on the cluster's nodes, not like a
-namespaced resource grant.
+**A grant made with this runbook is root-equivalent on every node where the
+granted pods start.** A privileged pod with the host root filesystem mounted
+can read every secret on disk, write every file, and enter every host
+namespace. Any user with RBAC `create` on pods in the granted namespace has the
+same reach. Treat that permission as `cluster-admin` on the nodes of the
+cluster, not as a namespaced resource grant.
 
-Consequences to accept before running the procedure:
+Accept these consequences before you do the procedure:
 
-- Grant the narrowest ServiceAccount you can, in a namespace created for this
-  purpose, and keep `create pods` in it restricted to cluster administrators.
-- The grant is persistent cluster configuration. It stays in effect until it is
-  removed (see [Revoke the grant](#revoke-the-grant)).
+- Grant the narrowest ServiceAccount possible, in a namespace created for this
+  purpose. Restrict `create pods` in that namespace to cluster administrators.
+- The grant is persistent cluster configuration. It stays in effect until you
+  delete it (see [Revoke the grant](#revoke-the-grant)).
 
 ## Requirements
 
 1. An MKE 3 cluster and its URL (`mke_url` in the Ansible inventory).
-2. MKE **admin** credentials — the config-toml API is admin-only.
+2. MKE **admin** credentials. The config-toml API is only for admins.
 3. A workstation with `kubectl` configured from an MKE client bundle (see
    [Access the cluster](access-cluster.md)), plus `curl`.
 
 ## What MKE refuses without the grant
 
-MKE 3's authorization layer refuses pods from non-admin identities that request
-privilege attributes unless the pod's ServiceAccount is on a cluster-level
-allowlist. The refusal names both the identity and the attributes:
+The authorization layer of MKE 3 refuses pods from non-admin identities that
+request privilege attributes. The exception is a pod whose ServiceAccount is on
+a cluster-level allowlist. The refusal names the identity and the attributes:
 
 ```text
 Error from server (Forbidden): error when creating "STDIN": pods "nonadmin-probe" is
@@ -61,16 +62,16 @@ required permissions to use attributes [hostbindmounts hostpid privileged] for
 resource nonadmin-probe
 ```
 
-Reading it:
+Description of the message:
 
-- `non-admin user "<uuid>"` — Kubernetes sees an MKE user as their account UUID,
-  not their username.
-- The two bracketed pairs are the current allowlists: attributes permitted for
-  non-admin users and their subjects, then attributes permitted for service
-  accounts and the subjects holding them. Here only
-  `system-upgrade:system-upgrade` is granted — that entry is added by the
-  install for the System Upgrade Controller.
-- `attributes [hostbindmounts hostpid privileged]` is what the pod asked for:
+- `non-admin user "<uuid>"`: Kubernetes identifies an MKE user by the account
+  UUID, not by the username.
+- The two bracketed pairs are the current allowlists. The first pair gives the
+  attributes permitted for non-admin users and their subjects. The second pair
+  gives the attributes permitted for service accounts and the subjects that
+  hold them. In this example, only `system-upgrade:system-upgrade` has a grant.
+  The installation adds that entry for the System Upgrade Controller.
+- `attributes [hostbindmounts hostpid privileged]` is what the pod requested:
   a `hostPath` volume, `spec.hostPID: true`, and a privileged container.
 
 Upstream reference:
@@ -81,7 +82,7 @@ Upstream reference:
 ### 1. Create the namespace
 
 Both support runbooks use the namespace `cluster-support` and its default
-ServiceAccount, so the grant covers exactly one identity:
+ServiceAccount. Therefore the grant covers exactly one identity:
 
 ```sh
 kubectl create namespace cluster-support
@@ -89,9 +90,9 @@ kubectl create namespace cluster-support
 
 ### 2. Grant the privilege attributes
 
-The allowlist lives in the MKE cluster configuration TOML, reachable only
-through the `/api/ucp/config-toml` API. Download it, add the ServiceAccount,
-and upload it back.
+The allowlist is in the MKE cluster configuration TOML. You can reach it only
+through the `/api/ucp/config-toml` API. Download the TOML, add the
+ServiceAccount, and upload the TOML again.
 
 ```sh
 export MKE_URL=<mke-host-or-ip>          # no scheme
@@ -109,9 +110,9 @@ curl -sk -H "Authorization: Bearer ${TOKEN}" \
   -o mke-config.toml "https://${MKE_URL}/api/ucp/config-toml"
 ```
 
-Edit `mke-config.toml`. In the `[cluster_config]` section, ensure both keys
-below exist and contain the listed values, creating either key if it is absent
-and **preserving any entries already present**:
+Edit `mke-config.toml`. In the `[cluster_config]` section, make sure that both
+keys below exist and contain the listed values. Create a key if it is absent.
+**Keep all entries that are already present**:
 
 ```toml
 [cluster_config]
@@ -119,14 +120,15 @@ and **preserving any entries already present**:
   priv_attributes_service_accounts = ["system-upgrade:system-upgrade", "cluster-support:default"]
 ```
 
-- `priv_attributes_allowed_for_service_accounts` — the attributes that may be
-  granted at all. These six are every attribute the admission controller
-  supports, and a default `bootc-mke3` install already sets all six.
-- `priv_attributes_service_accounts` — the `<namespace>:<serviceaccount>`
-  entries that may use them. **Append** `cluster-support:default`; a default
-  install already contains `system-upgrade:system-upgrade` for the System
-  Upgrade Controller, and overwriting the array revokes that grant. The example
-  above shows the merged result.
+- `priv_attributes_allowed_for_service_accounts`: the attributes that you can
+  grant. These six attributes are all the attributes that the admission
+  controller supports. A default `bootc-mke3` installation already sets all
+  six.
+- `priv_attributes_service_accounts`: the `<namespace>:<serviceaccount>`
+  entries that can use the attributes. **Append** `cluster-support:default`.
+  A default installation already contains `system-upgrade:system-upgrade` for
+  the System Upgrade Controller. If you overwrite the array, you revoke that
+  grant. The example above shows the merged result.
 
 Upload the edited file:
 
@@ -139,18 +141,18 @@ curl -sk -X PUT -H "Authorization: Bearer ${TOKEN}" \
 rm -f mke-config.toml     # the file is cluster configuration, not a secret, but do not keep stale copies
 ```
 
-> Use `-k`/`--insecure` only while MKE still serves its self-signed
-> certificate; drop it once MKE has a trusted certificate installed.
+> Use `-k`/`--insecure` only while MKE uses its self-signed certificate.
+> Delete the option when MKE has a trusted certificate.
 
-The change takes effect on the next admission decision; no MKE restart is
-required: a creation refused seconds earlier succeeds on the first retry after
-the `PUT` returns 200, and the pre-existing `system-upgrade:system-upgrade`
-entry survives the edit.
+The change takes effect at the next admission decision. You do not need to
+restart MKE. A creation that MKE refused seconds before succeeds at the first
+retry after the `PUT` returns 200. The existing `system-upgrade:system-upgrade`
+entry stays after the edit.
 
 ### 3. Verify the grant
 
-Create a pod that requests all three attributes on a real node and check that
-admission accepts it. Substitute any node name from `kubectl get nodes`:
+Create a pod that requests all three attributes on a real node. Verify that
+admission accepts the pod. Use any node name from `kubectl get nodes`:
 
 ```sh
 kubectl -n cluster-support run grant-check --image=mirantis/ucp-dsinfo:3.9.7 --restart=Never \
@@ -158,12 +160,12 @@ kubectl -n cluster-support run grant-check --image=mirantis/ucp-dsinfo:3.9.7 --r
 kubectl -n cluster-support delete pod grant-check
 ```
 
-Creation succeeding — rather than being refused with the error above — proves the
-grant. The pod runs `true` and exits.
+A successful creation proves the grant. MKE does not refuse the pod with the
+error above. The pod runs `true` and exits.
 
 ## Expected Results
 
-- The `grant-check` pod in step 3 is created instead of denied.
+- MKE creates the `grant-check` pod in step 3 and does not deny it.
 - The support pods in [node-debug-shell.md](node-debug-shell.md) and
   [collect-support-bundles.md](collect-support-bundles.md) start on their
   target nodes.
@@ -171,10 +173,11 @@ grant. The pod runs `true` and exits.
 ## Automated alternative
 
 This repository already automates the same two API calls for the System Upgrade
-Controller: `ansible/tasks/suc-priv-grant-tasks.yml` fetches the config TOML,
+Controller. `ansible/tasks/suc-priv-grant-tasks.yml` fetches the config TOML,
 runs `ansible/tasks/helpers/suc_priv_grant.py <config.toml> <namespace:sa>`,
-and PUTs the result. The helper is idempotent and merges rather than
-overwrites, so it is the safer way to edit the arrays by hand as well:
+and sends the result with PUT. The helper is idempotent and it merges the
+arrays instead of overwriting them. Therefore it is also the safer way to edit
+the arrays outside the playbook:
 
 ```sh
 curl -sk -H "Authorization: Bearer ${TOKEN}" \
@@ -185,55 +188,55 @@ curl -sk -X PUT -H "Authorization: Bearer ${TOKEN}" \
   --data-binary @mke-config.toml "https://${MKE_URL}/api/ucp/config-toml"
 ```
 
-Two differences from running the playbook:
+The helper differs from the playbook in two ways:
 
 - The playbook grants `suc_service_account` (from
-  `ansible/vars/common-vars.yml`), not `cluster-support:default`. Pass the
-  ServiceAccount you want as the helper's second argument.
+  `ansible/vars/common-vars.yml`), not `cluster-support:default`. Give the
+  ServiceAccount that you want as the second argument of the helper.
 - The helper also sets `enable_admin_ucp_scheduling = true` in
   `[scheduling_configuration]`. The support pods in these runbooks do not need
-  it: they set `spec.nodeName` directly, which bypasses the Kubernetes
-  scheduler and therefore MKE's scheduling restrictions on manager nodes. The
-  key is harmless but is a real cluster-wide change — if you do not want it,
-  edit the TOML by hand as in step 2 instead.
+  this key. They set `spec.nodeName` directly. This bypasses the Kubernetes
+  scheduler and therefore the scheduling restrictions of MKE on manager nodes.
+  The key is harmless, but it is a real cluster-wide change. If you do not want
+  it, edit the TOML by hand as in step 2.
 
 ## Revoke the grant
 
-Remove `cluster-support:default` from `priv_attributes_service_accounts` and
-PUT the TOML back, then delete the namespace:
+Delete `cluster-support:default` from `priv_attributes_service_accounts`. Send
+the TOML back with PUT. Then delete the namespace:
 
 ```sh
 kubectl delete namespace cluster-support
 ```
 
-Leaving `priv_attributes_allowed_for_service_accounts` populated is harmless on
-its own — it lists what *may* be granted; without an entry in
-`priv_attributes_service_accounts` no ServiceAccount can use it.
+It is harmless to keep `priv_attributes_allowed_for_service_accounts`
+populated. It lists what you *can* grant. Without an entry in
+`priv_attributes_service_accounts`, no ServiceAccount can use the attributes.
 
 ## F.A.Q
 
 ### I am an MKE admin — do I need this at all?
 
-No. With an admin client bundle, the debug shell Pods and the capture Jobs of
-both support runbooks are created and run with only
-`system-upgrade:system-upgrade` on the allowlist. Capture Jobs are no exception
-— the pods the Job controller creates are not subject to the non-admin check
-either.
+No. With an admin client bundle, both support runbooks create and run their
+debug shell Pods and capture Jobs. The allowlist needs only
+`system-upgrade:system-upgrade`. Capture Jobs are not an exception. The
+non-admin restriction does not apply to the pods that the Job controller creates.
 
-Apply the grant when support work is done by non-admin MKE users. Those
-operators are refused without it even when Kubernetes RBAC already lets them
-create pods in the namespace.
+Apply the grant when non-admin MKE users do support work. MKE refuses those
+operators without the grant, even when Kubernetes RBAC lets them create pods in
+the namespace.
 
 ### Does this need the MKE Scheduler grant too?
 
-No. Every support pod in these runbooks pins itself with `spec.nodeName`, so the
-scheduler is not involved, and a `NoSchedule` taint — MKE 3 taints managers with
-`com.docker.ucp.manager:NoSchedule` — cannot keep a pinned pod off its node.
-The manifests still carry a key-less `operator: Exists` toleration, which covers
-every taint including `NoExecute`, the one effect that would evict a pinned pod.
+No. Every support pod in these runbooks pins itself with `spec.nodeName`.
+Therefore the scheduler is not involved. A `NoSchedule` taint cannot keep a
+pinned pod off its node. MKE 3 taints managers with
+`com.docker.ucp.manager:NoSchedule`. The manifests also have a key-less
+`operator: Exists` toleration. It covers every taint, including `NoExecute`,
+which is the one effect that can evict a pinned pod.
 
 ### Why not a Kubernetes PSA label or a PodSecurityPolicy?
 
-MKE 3's own admission controller runs in addition to Kubernetes pod security
-admission and is configured only through the cluster config TOML. Relaxing PSA
-on the namespace does not satisfy it.
+The admission controller of MKE 3 runs in addition to the Kubernetes pod
+security admission. You configure it only through the cluster config TOML. A
+relaxed PSA on the namespace does not satisfy the MKE admission controller.

@@ -1,36 +1,39 @@
 # Verify bootc-mke3 image signatures
 
 `bootc-mirantis` (the repository that builds and pushes `bootc-mke3` OCI
-images) cosign-signs every image it pushes: the `rocky-9-base` base image
-and the versioned `bootc-mke3` product image, in both its dev registry
-(`registry.ci.mirantis.com/bootc-mke3-dev`) and prod registry
-(`registry.mirantis.com/bootc-mke3`), each registry with its own key pair.
-This runbook covers verifying that signature — a check you can run at any of
-three points in an image's lifecycle in this repo:
+images) signs every image that it pushes with cosign. These images are the
+`rocky-9-base` base image and the versioned `bootc-mke3` product image. It
+pushes them to the dev registry (`registry.ci.mirantis.com/bootc-mke3-dev`)
+and the prod registry (`registry.mirantis.com/bootc-mke3`). Each registry has
+its own key pair. This runbook describes how to verify that signature. You can
+do this at any of three points in the lifecycle of an image in this
+repository:
 
-- **Mirroring** it into your own internal/air-gapped registry — see the
+- **Mirroring** it into your own internal or air-gapped registry. See the
   [air-gap runbook](../installation-guide/airgap-bootc-mke3.md).
-- **Pulling** it for use, e.g. before referencing it in an Ansible inventory
-  or kickstart file — see [Provisioning](../installation-guide/provisioning.md#registry).
-- **Using** it — installing from it (Generic ISO kickstart, see
-  [ISO editions](../installation-guide/iso-editions.md#generic-image-customisation))
-  or switching an existing node to it during an upgrade (see
+- **Pulling** it for use, for example before you put it in an Ansible
+  inventory or kickstart file. See
+  [Provisioning](../installation-guide/provisioning.md#registry).
+- **Using** it: you install from it, or you switch an existing node to it
+  during an upgrade. For the install (Generic ISO kickstart), see
+  [ISO editions](../installation-guide/iso-editions.md#generic-image-customisation).
+  For the upgrade, see
   [Upgrade via the ClusterUpgrade CR](upgrade-with-controller.md) or the
-  [Ansible exception path](upgrade-with-ansible.md)).
+  [Ansible exception path](upgrade-with-ansible.md).
 
 ## Prerequisites
 
-1. `cosign` v2.5.3 installed on the machine doing the verification — this
-   matches the version `bootc-mirantis` signs with. Newer major versions
-   (v3.x) change flag semantics for transparency-log handling and are not
-   guaranteed compatible with the signatures produced here.
-2. The current public key for the registry you're verifying against (`dev`
+1. `cosign` v2.5.3 installed on the machine that does the verification. This
+   is the version that `bootc-mirantis` signs with. Newer major versions
+   (v3.x) change the flag semantics for transparency-log handling. They are not
+   guaranteed to be compatible with the signatures that this repository makes.
+2. The current public key for the registry that you verify against (`dev`
    or `prod`). Public keys are **not** committed to any repository and are
-   **not** published to any URL — ask PRODENG for the current key. See
-   `bootc-mirantis`'s
+   **not** published to any URL. Ask PRODENG for the current key. For the
+   current policy on key storage and retrieval, see
    [`docs/cosign-signing.md`](https://github.com/Mirantis/bootc-mirantis/blob/main/docs/cosign-signing.md)
-   for the current key-storage and retrieval policy, and for what to do if
-   you suspect a key has rotated.
+   in `bootc-mirantis`. This file also states what to do if you suspect that a
+   key rotated.
 
 ## Verify
 
@@ -46,75 +49,76 @@ cosign verify --key <path-to-dev-public-key-from-PRODENG> \
 
 `<image>` is `rocky-9-base` or the versioned `bootc-mke3` product image name
 (of the form `r<rocky-version>-mcr<mcr-version>-mke<mke-version>-bare`, see
-the [Releases page](https://github.com/Mirantis/bootc-mke3/releases)); `<tag>` is whichever build
-tag you're mirroring, pulling, or switching to.
+the [Releases page](https://github.com/Mirantis/bootc-mke3/releases)).
+`<tag>` is the build tag that you mirror, pull, or switch to.
 
-A signature mismatch, a missing signature, or a key mismatch makes `cosign
-verify` exit non-zero and print a diagnostic — treat that as a hard failure
-and do not mirror, pull, install from, or switch to that image. Check the
-exit code; a non-zero exit is the failure signal, not merely the presence of
-warning text on stdout.
+If a signature does not match, a signature is missing, or a key does not
+match, `cosign verify` exits with a non-zero code and prints a diagnostic.
+Treat this as a hard failure. Do not mirror, pull, install from, or switch to
+that image. Read the exit code. A non-zero exit code is the failure signal.
+Warning text on stdout is not the failure signal.
 
 ## At mirroring time
 
-Before or during mirroring a `bootc-mke3` OCI image into your own registry
+Before or while you mirror a `bootc-mke3` OCI image into your own registry
 (see the [air-gap runbook](../installation-guide/airgap-bootc-mke3.md)),
 verify it against the source registry (`registry.mirantis.com` or
-`registry.ci.mirantis.com/bootc-mke3-dev`) using the command above.
-Mirroring tools that copy by digest (e.g. `skopeo copy`) copy the image
-manifest but do not necessarily carry the cosign signature — signatures are
-stored as separate OCI artifacts alongside the image — so verify against the
-source before copying, and re-verify against the destination afterwards if
-your mirroring tool is not known to copy signature artifacts too.
+`registry.ci.mirantis.com/bootc-mke3-dev`). Use the command above.
+Mirroring tools that copy by digest (for example `skopeo copy`) copy the image
+manifest. They do not necessarily copy the cosign signature, because
+signatures are separate OCI artifacts that the registry stores next to the
+image. Therefore verify against the source before you copy. After the copy, verify again
+against the destination if you do not know that your mirroring tool copies
+signature artifacts too.
 
 ## At pull time
 
-Before pulling a `bootc-mke3` image reference into an Ansible variable
-(`bootc_image_ref` in `vars/upgrade-vars.yml`), a kickstart file, or a
-manual `podman pull`/`skopeo copy`, verify it with the command above against
-whichever registry (`registry.mirantis.com`, your internal mirror, or the
-dev registry) that reference resolves to.
+Before you put a `bootc-mke3` image reference in an Ansible variable
+(`bootc_image_ref` in `vars/upgrade-vars.yml`), a kickstart file, or a manual
+`podman pull`/`skopeo copy`, verify it with the command above. Use the
+registry that the reference resolves to (`registry.mirantis.com`, your
+internal mirror, or the dev registry).
 
 ## At install/switch time
 
-- **Initial install (Generic ISO kickstart):** verify the `<oci-name>`
-  before putting it in the kickstart's `bootc switch --mutate-in-place
-  --transport registry <oci-name>` line — see
+- **Initial install (Generic ISO kickstart):** verify the `<oci-name>` before
+  you put it in the `bootc switch --mutate-in-place --transport registry
+  <oci-name>` line of the kickstart. See
   [Generic image customisation](../installation-guide/iso-editions.md#generic-image-customisation).
-- **Upgrade:** verify the target `bootc_image_ref` (Ansible path, see
-  [Upgrade via Ansible](upgrade-with-ansible.md)) or `spec.os.image`
-  (`ClusterUpgrade` CR path, see the target-image-access step in
-  [Upgrade via the ClusterUpgrade CR](upgrade-with-controller.md))
-  before applying it — both drive `bootc switch`/`bootc upgrade` on cluster
-  nodes.
+- **Upgrade:** before you apply the upgrade, verify the target image. In the
+  Ansible path, the target is `bootc_image_ref` (see
+  [Upgrade via Ansible](upgrade-with-ansible.md)). In the `ClusterUpgrade` CR
+  path, the target is `spec.os.image` (see the target-image-access step in
+  [Upgrade via the ClusterUpgrade CR](upgrade-with-controller.md)). Both paths
+  drive `bootc switch`/`bootc upgrade` on cluster nodes.
 
 ## Scope
 
-The [Verify](#verify) command above covers images `bootc-mirantis` pushes
-itself: `rocky-9-base` and the versioned `bootc-mke3` product image, in both
-the dev and prod registries.
+The [Verify](#verify) command above covers the images that `bootc-mirantis`
+pushes itself: `rocky-9-base` and the versioned `bootc-mke3` product image, in
+both the dev and prod registries.
 
-The controllers are built and signed by their own repositories, not by
+Their own repositories build and sign the controllers, not
 `bootc-mirantis`:
 
 | Component | Signed? | Notes |
 |---|---|---|
-| `cluster-upgrade-controller` | Yes | Production images and Helm chart are cosign-signed by the repository's release workflow (PRODENG-3686, Done 2026-08-25). |
+| `cluster-upgrade-controller` | Yes | The release workflow of the repository signs production images and the Helm chart with cosign (PRODENG-3686, Done 2026-08-25). |
 | `machine-config-controller` | Yes | Same as above (PRODENG-3686). |
 
-The controllers' signing key is configured in their own CI, not in
-`bootc-mirantis`. Do not assume the `bootc-mke3` prod public key verifies
-them — ask PRODENG which public key applies before relying on a verification
+Their own CI configures the signing key of the controllers, not
+`bootc-mirantis`. Do not assume that the `bootc-mke3` prod public key verifies
+them. Ask PRODENG which public key applies before you rely on a verification
 result.
 
 ## SBOM and CVE scan reports on GitHub releases
 
 Separately from signatures, each production release on
 [`Mirantis/bootc-mke3` Releases](https://github.com/Mirantis/bootc-mke3/releases)
-carries the SBOM and CVE-scan reports produced when `bootc-mirantis` built the
-images (PRODENG-3712). Six files per platform, named
-`<platform>-<image>-<report>`, where `<platform>` is `bare` or `cloud`, and
-`<image>` is `base` (`rocky-9-base`) or `mke3` (the `bootc-mke3` product image):
+has the SBOM and CVE-scan reports that `bootc-mirantis` made when it built
+the images (PRODENG-3712). There are six files for each platform, named
+`<platform>-<image>-<report>`. `<platform>` is `bare` or `cloud`. `<image>` is
+`base` (`rocky-9-base`) or `mke3` (the `bootc-mke3` product image):
 
 | File | Content |
 |---|---|
@@ -122,29 +126,31 @@ images (PRODENG-3712). Six files per platform, named
 | `<platform>-{base,mke3}-trivy.json` | `trivy` findings, machine-readable |
 | `<platform>-{base,mke3}-trivy.txt` | The same findings as a table |
 
-How to read them:
+How to read the reports:
 
-- **The trivy reports list fixable HIGH/CRITICAL findings only.** The scan runs
-  with `--scanners vuln --ignore-unfixed --severity HIGH,CRITICAL`, so
-  vulnerabilities with no published fix, and everything below HIGH, are absent.
-  An empty report does not mean the image has no known CVEs. Use the SBOM with
-  your own scanner for the full picture.
-- **They are a build-time snapshot.** Nothing rescans after the release; CVEs
-  published later are not reflected. Re-scan the SBOM periodically.
-- **Do not add the `base` and `mke3` counts together.** `bootc-mke3` is built
-  `FROM` the base image, so base-layer findings appear in both reports. When
-  counting, deduplicate on `(Target, VulnerabilityID, PkgName)`.
-- **Scope is the two OCI images.** Controller images and charts are not
-  scanned in this pipeline.
-- **They are not cosign-signed.** Signatures cover the OCI images above, not
-  these release assets. Treat the reports as informational, not as an
+- **The trivy reports list only fixable HIGH/CRITICAL findings.** The scan runs
+  with `--scanners vuln --ignore-unfixed --severity HIGH,CRITICAL`. Therefore
+  the reports do not show vulnerabilities that have no published fix, and they
+  do not show anything below HIGH. An empty report does not mean that the image
+  has no known CVEs. For the full result, use the SBOM with your own scanner.
+- **They are a snapshot from build time.** Nothing scans again after the
+  release. The reports do not show CVEs that someone publishes later. Scan the SBOM
+  again periodically.
+- **Do not add the `base` and `mke3` counts together.** `bootc-mke3` builds
+  `FROM` the base image, so the findings of the base layer are in both reports.
+  When you count, deduplicate on `(Target, VulnerabilityID, PkgName)`.
+- **The scope is the two OCI images.** This pipeline does not scan controller
+  images and charts.
+- **They are not signed with cosign.** Signatures cover the OCI images above,
+  not these release assets. Treat the reports as information, not as an
   attestation.
-- **Presence is best-effort.** A missing report is skipped with a warning, not
-  a release failure. Releases up to and including build `20260917-79` have no
-  reports; `20260922-83` (`bare` + `cloud`) is the first with them.
+- **The reports are best-effort.** If a report is missing, the pipeline skips
+  it with a warning. It does not fail the release. Releases up to and including
+  build `20260917-79` have no reports. `20260922-83` (`bare` + `cloud`) is the
+  first release that has them.
 
-Example: list the findings of a release's `bootc-mke3` image, one row per
-deduplicated CVE and package.
+Example: list the findings of the `bootc-mke3` image of a release, with one
+row for each deduplicated CVE and package.
 
 ```sh
 jq -r '[.Results[]? | .Target as $t | (.Vulnerabilities // [])[]
@@ -154,7 +160,7 @@ jq -r '[.Results[]? | .Target as $t | (.Vulnerabilities // [])[]
 
 ## Key rotation
 
-Keys rotate independently per environment (dev/prod), and this repo is not
-notified when that happens. Always ask PRODENG for the *current* key rather
-than reusing a previously obtained one, and re-verify if you suspect a
-rotation occurred since you last checked.
+Keys rotate independently for each environment (dev/prod). This repository
+does not get a notification when a key rotates. Always ask PRODENG for the
+*current* key. Do not reuse a key that you got before. Verify again if you
+suspect that a rotation occurred since you last verified.
