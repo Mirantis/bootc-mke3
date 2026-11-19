@@ -8,7 +8,7 @@ A vSphere setup has many requirements. VMware clusters usually have a pre-define
 
 ### Prerequisites 
 
-Before you start this guide, make sure that you have these items:
+Before you begin this guide, make sure that you have these items:
 
 1. Terraform installed locally. [The AWS module](provision-terraform-aws.md#prerequisites) requires `>= 1.5`. `terraform/vsphere` does not pin a `required_version`. Use a reasonably current Terraform release.
 2. The `bootc-mke3` ISO in the vSphere datastore that you use for the `bootc-mke3` cluster installation.
@@ -18,7 +18,7 @@ Before you start this guide, make sure that you have these items:
 
 ### Image and VM template
 
-Terraform creates all the VMs for the `bootc-mke3` cluster by cloning a VM template. You must create this template in advance. There are two options to prepare the template: manual and automated. Only the manual option is implemented and tested at this time.
+Terraform creates all the VMs for the `bootc-mke3` cluster by cloning a VM template. You must create this template in advance. There are two options to prepare the template: manual and automated. At this time, only the manual option has an implementation and tests.
 
 The instructions below show how to prepare the VM template for the `bootc-mke3` cluster nodes.
 
@@ -57,7 +57,7 @@ To authenticate, use user credentials that can operate vSphere (see the Prerequi
 
 Set the `vsphere_server` variable to the URL or IP address of vSphere without the protocol prefix (without `https://`).
 
-Terraform uses `vsphere_user` and `vsphere_password` to authenticate to vSphere and do operations. The variables file (`terraform.tfvars`) is gitignored, so sensitive data is not exposed by mistake.
+Terraform uses `vsphere_user` and `vsphere_password` to authenticate to vSphere and do operations. Git ignores the variables file (`terraform.tfvars`), so you do not expose sensitive data by mistake.
 
 `allow_unverified_ssl` defaults to `false`, so Terraform verifies the vSphere server certificate. If your vSphere uses a self-signed certificate, set `allow_unverified_ssl = true` in `terraform.tfvars` (this is not recommended outside lab environments).
 
@@ -99,16 +99,16 @@ Note these points:
 1. Make the manager and worker disk sizes not smaller than the sizes in the VM template.
 2. Configure the IP addresses of the managers, workers, and gateway according to the vSphere network configuration. Make sure that the VMs can reach DNS.
 3. Terraform uses the `cluster_name` variable as a prefix for VM names. For example, if cluster_name = "bootc-mke3-cluster", the names of the managers are `bootc-mke3-cluster-mngr1`, `bootc-mke3-cluster-mngr2`, and so on. The names of the workers are `bootc-mke3-cluster-wrk1`, `bootc-mke3-cluster-wrk2`, and so on.
-4. `vm_user` (required, no default) — the username that the deployed VMs
-   are configured with. Current vSphere testing practice is to provision
+4. `vm_user` (required, no default) — the username to configure on the
+   deployed VMs. Current vSphere testing practice is to provision
    the VM template with the **bare** ISO variant and kickstart (see [Option
    1](#option-1---manual) above), not with cloud-init. A vSphere-specific
    cloud-init platform build existed previously, but it is not in use
    today (see the note in [provisioning.md](provisioning.md#machines)).
-   The value must match the user that your template is configured to
-   create and authorize, however you built the template.
-5. `firmware` (required, no default) — `bios` or `efi`. The value must match how the VM
-   template was created.
+   The value must match the user that your template creates and
+   authorizes, however you built the template.
+5. `firmware` (required, no default) — `bios` or `efi`. The value must match how you
+   created the VM template.
 
 ## Procedure
 

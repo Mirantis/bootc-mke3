@@ -28,12 +28,12 @@ Before you start the upgrade procedure, you can set custom values for the upgrad
 
 You can do the MCR/OS upgrade in one of two ways:
 
-1. **Switch to a specific image and/or tag.** To do this, set `bootc_image_ref` in `vars/upgrade-vars.yml` to the full OCI image URL, including the image tag. If you plan to switch to a private registry, add the applicable credentials to the machines with [this ansible playbook](../../ansible/reg-creds-playbook.yml). Before you set `bootc_image_ref`, verify the cosign signature of the target image. See [Verify bootc-mke3 image signatures](verify-image-signatures.md#at-installswitch-time).
-2. **Upgrade to the latest version of the current image tag.** To do this, keep `bootc_image_ref` unchanged or empty in `vars/upgrade-vars.yml`. **This does nothing under the current tagging scheme.** Every build gets a unique tag that is never reused. Therefore nothing is pushed under a tag that a node already tracks, and `bootc upgrade` finds nothing new. Use option 1 instead. This option is documented only for completeness and for older registries.
+1. **Switch to a specific image and/or tag.** To do this, set `bootc_image_ref` in `vars/upgrade-vars.yml` to the full OCI image URL, including the image tag. If you plan to switch to a private registry, add the applicable credentials to the machines with [this ansible playbook](../../ansible/reg-creds-playbook.yml). Before you set `bootc_image_ref`, check the cosign signature of the target image. See [the runbook for bootc-mke3 image signatures](verify-image-signatures.md#at-installswitch-time).
+2. **Upgrade to the latest version of the current image tag.** To do this, keep `bootc_image_ref` unchanged or empty in `vars/upgrade-vars.yml`. **This does nothing under the current tagging scheme.** Every build gets a unique tag that is never reused. Therefore the build process never pushes a new image under a tag that a node already tracks, and `bootc upgrade` finds nothing new. Use option 1 instead. This guide describes this option only for completeness and for older registries.
 
 The playbook upgrades worker nodes in batches of `upgrade_worker_batch_size` (default `3`, in `vars/upgrade-vars.yml`). This is similar to `workerConcurrency` on the [ClusterUpgrade CR path](upgrade-with-controller.md).
 
-When all the variables are set (if it is necessary), do these two steps:
+When you set all the variables (if it is necessary), do these two steps:
 
 1. Make sure that the expected Ansible inventory file exists and is correct.
 
@@ -50,7 +50,7 @@ When all the variables are set (if it is necessary), do these two steps:
 
 ### Backups taken by the playbook
 
-Before the managers are switched to the new image, `mke-upgrade-playbook.yml` runs `mke-backup-playbook.yml` on every manager. It writes two root-only (`0600`) archives to `mke_backup_dir` (default `/var/lib/mke-ansible-backup`, set in `vars/common-vars.yml`):
+Before the playbook switches the managers to the new image, `mke-upgrade-playbook.yml` runs `mke-backup-playbook.yml` on every manager. It writes two root-only (`0600`) archives to `mke_backup_dir` (default `/var/lib/mke-ansible-backup`, set in `vars/common-vars.yml`):
 
 - `mke-<MKE version>-backup-<timestamp>.tar`: the MKE backup.
 - `swarm-<engine version>-backup-<timestamp>.tar.tgz`: the Swarm state from `/var/lib/docker/swarm/`.
@@ -59,7 +59,7 @@ The directory is on persistent storage, so the archives stay after the manager r
 
 ## Expected Results
 
-The Ansible playbook runs without error. To verify the upgrade, open the MKE UI (`mke_url` in the Ansible inventory file). Log in with the credentials in `vars/mke-creds.yml`. Make sure that the version is upgraded as expected.
+The Ansible playbook runs without error. To check the upgrade, open the MKE UI (`mke_url` in the Ansible inventory file). Log in with the credentials in `vars/mke-creds.yml`. Make sure that the MKE version is the version that you expect after the upgrade.
 
 ## MKE upgrade process troubleshooting
 

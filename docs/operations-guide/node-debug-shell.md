@@ -1,6 +1,6 @@
 # Open a debug shell on a node
 
-This runbook shows how to get a root shell on a `bootc-mke3` node through the
+This runbook shows how to open a root shell on a `bootc-mke3` node through the
 Kubernetes API, without SSH. A privileged container pinned to the node gives
 access to the host's filesystem, process table, and namespaces. The immutable,
 SSH-less design of a `bootc` node otherwise makes these operations difficult.
@@ -12,10 +12,10 @@ show.
 ## Security
 
 A debug shell created with this runbook is **root-equivalent on the node where
-it starts**. The container is privileged and mounts the host root filesystem at
+it starts**. The container runs privileged and mounts the host root filesystem at
 `/host`. It can read every secret on disk and enter every host namespace. Treat
 the ability to create these pods as `cluster-admin` on the nodes of the
-cluster. Delete the pods when the investigation is complete. Nothing removes
+cluster. Delete the pods when the investigation is complete. Nothing deletes
 them automatically.
 
 ## Requirements
@@ -65,7 +65,7 @@ kubectl debug node/<node-name> -it -n cluster-support \
   -- bash
 ```
 
-- `-n cluster-support` is required. The pod runs as the `default`
+- You must set `-n cluster-support`. The pod runs as the `default`
   ServiceAccount of that namespace, and the privilege grant covers this
   identity. Without the option, the pod starts in the `default` namespace,
   which has no grant.
@@ -73,7 +73,7 @@ kubectl debug node/<node-name> -it -n cluster-support \
   generated pod name is not a DNS label
   (`must be no more than 63 characters must not contain dots`). The warning
   comes from the naming in kubectl. It is not a failure, and the pod runs.
-- kubectl does **not** delete the pod when you exit. Remove the pod:
+- kubectl does **not** delete the pod when you exit. Delete the pod:
 
   ```sh
   kubectl -n cluster-support get pods            # find node-debugger-<node>-xxxxx
@@ -93,8 +93,8 @@ The manifest states every attribute that it requests.
 The template
 [`debug-shell-pod.yaml.tmpl`](../examples/cluster-support/debug-shell-pod.yaml.tmpl)
 takes two `envsubst` variables. `${NODE_NAME}` is the node to pin to.
-`${NODE_SLUG}` is the same name with dots replaced by dashes, and it is used
-for the pod name. A pod name that contains dots becomes the hostname of the pod,
+`${NODE_SLUG}` is the same name with dots replaced by dashes, and the pod name
+uses it. A pod name that contains dots becomes the hostname of the pod,
 and kubectl shows a warning. AWS node names are FQDNs. Edit the image tag in
 the template one time to match your MKE version. Then use any node selector to
 create the pods on many nodes:
@@ -131,8 +131,8 @@ kubectl -n cluster-support get pods -l app=node-debug-shell -o wide
 kubectl -n cluster-support exec -it debug-shell-<node-slug> -- bash
 ```
 
-When you are done, delete all the pods. The pods run `sleep infinity` and stay
-until you remove them:
+When you finish, delete all the pods. The pods run `sleep infinity` and stay
+until you delete them:
 
 ```sh
 kubectl -n cluster-support delete pod -l app=node-debug-shell
@@ -154,7 +154,7 @@ Inside the container, three levels of host access are available.
 
 ### Read host files directly
 
-The root filesystem of the node is mounted at `/host`:
+The pod mounts the root filesystem of the node at `/host`:
 
 ```sh
 cat /host/etc/os-release            # Rocky Linux release of the bootc image
@@ -206,7 +206,7 @@ kubectl -n cluster-support cp \
 
 ### Why not just SSH to the node?
 
-`bootc-mke3` clusters are built to run with SSH disabled after installation
+We build `bootc-mke3` clusters to run with SSH disabled after installation
 (see [no-touch join](no-touch-join.md)). This path uses only the MKE endpoint.
 MKE RBAC authorizes the path, and the Kubernetes API server audits it.
 

@@ -19,7 +19,7 @@ Simple ISO considerations:
 
 The Generic ISO is a plain ISO that has no customisation.
 
-`bootc-mke3` is based on Rocky Linux. It uses [Anaconda](https://anaconda-installer.readthedocs.io/en/latest/) for the installation, and Kickstart for the customisation.
+`bootc-mke3` builds on Rocky Linux. It uses [Anaconda](https://anaconda-installer.readthedocs.io/en/latest/) for the installation, and Kickstart for the customisation.
 
 ### Generic image customisation
 
@@ -45,13 +45,13 @@ See
 [Verify bootc-mke3 image signatures](../operations-guide/verify-image-signatures.md).
 
 > [!WARNING]
-> The user is responsible for adding those specific kickstart file lines. If the user does not add them, `bootc-mke3` is not installed correctly.
+> You must add those specific kickstart file lines. If you do not add them, the installer does not install `bootc-mke3` correctly.
 
 ### Common kickstart customisations
 
 Put the recipes below in the same kickstart file as the mandatory lines
 above. Put them in its `%post` section (or a second `%post --erroronfail`
-block). They cover the two customisations that most often must be done at
+block). They cover the two customisations that you most often must do at
 provision time and not afterwards. For what the image contains, and why
 these are the supported extension points, see
 [Image architecture](image-architecture.md).
@@ -64,8 +64,8 @@ present from the first boot of the node. This is necessary on an image that
 sets `kernel.modules_disabled=1`. That latch works in one direction only. A
 module that is not loaded before the latch applies cannot be loaded later
 by any means. Current images set `kernel.modules_disabled` to `0`. Because this is a kickstart
-`%post`, the drop-in is written into the installed tree, and the module is
-loaded on the first boot of the node. The cloud-init path is different. See
+`%post`, the installer writes the drop-in into the installed tree, and the node
+loads the module on the first boot. The cloud-init path is different. See
 [Adding modules](image-architecture.md#adding-modules) for the timing
 table and [Kernel modules](image-architecture.md#kernel-modules) for the
 allowlist.
@@ -80,7 +80,7 @@ EOF
 
 `%post` runs before the installed system has ever booted. Thus the
 drop-in is effective on **first boot**, and no additional reboot is necessary.
-`systemd-modules-load.service` reads `/etc/modules-load.d/` and is ordered
+`systemd-modules-load.service` reads `/etc/modules-load.d/` and runs
 `Before=systemd-sysctl.service`. Thus the modules load while loading is still
 permitted. Verify on the booted node with:
 

@@ -8,7 +8,7 @@ This root module calls the [`terraform-mirantis-provision-aws` `mke3` example](h
 ## Prerequisites
 
 - Terraform >= 1.5
-- AWS credentials that are configured (`AWS_PROFILE` or `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`)
+- AWS credentials that you configure (`AWS_PROFILE` or `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`)
 - A current `bootc-mke3` AMI ID (and owning AWS account). See the note above.
 
 ## Usage
@@ -40,7 +40,7 @@ This folder is thin on purpose. `main.tf` calls the upstream `mke3` example as a
 | `aws.region` | AWS region | `us-east-1` |
 | `network` | VPC CIDR and gateway flags | `172.31.0.0/16`, no NAT/VPN |
 | `subnets` | Subnet CIDR blocks mapped to node groups | `{}` |
-| `nodegroups` | EC2 node group definitions: `ami_id`+`ami_owner` for bootc (`ssh_user` is required with `ami_id`), `type`, `count`, `volume_size`, `role`, `public`. Each entry also accepts a `user_data` field, but Terraform ignores it without a message when `is_bootc_based = true`. See below | — |
+| `nodegroups` | EC2 node group definitions: `ami_id`+`ami_owner` for bootc (you must set `ssh_user` with `ami_id`), `type`, `count`, `volume_size`, `role`, `public`. Each entry also accepts a `user_data` field, but Terraform ignores it without a message when `is_bootc_based = true`. See below | — |
 | `is_bootc_based` | Inject the `cloud-user` cloud-init payload, which overrides any per-nodegroup `user_data` | `true` |
 | `ssh_pk_location` | Directory to write the generated SSH private key. An empty value means the default location of the upstream module | `""` |
 | `extra_tags` | Additional AWS tags applied to all resources | `{}` |

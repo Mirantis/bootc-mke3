@@ -1,13 +1,13 @@
 # Join machines with no-touch join
 
 Add new worker machines to an existing `bootc-mke3` MKE 3 cluster with the
-first-boot join that is built into the image. This process does not use SSH
+first-boot join that the image includes. This process does not use SSH
 to the new machine. It does not run the Ansible installer again.
 
 **This is the standard process to join machines after the initial
 install.** Production clusters usually disable SSH on cluster machines after
 the install. Then the Ansible installer cannot add more machines. No-touch
-join is designed for this situation.
+join exists for this situation.
 
 The standard operating procedure uses batches:
 
@@ -24,7 +24,7 @@ For a description of how the mechanism works, see the
 
 1. A running MKE 3 / Docker Swarm cluster with at least one manager that you
    can reach.
-2. New machines that are provisioned from a `bootc-mke3` image. All current
+2. New machines that you provision from a `bootc-mke3` image. All current
    images ship with `swarm-join.service` enabled.
 3. A network path from each new machine to a manager, as given in the [port
    requirements](#port-requirements) below. The join itself needs only the
@@ -58,7 +58,7 @@ Use the **worker** token. The manager endpoint is `<NodeAddr>:2377`.
 
 ### 2. Inject the credential into each new machine
 
-Select the delivery path that matches how the machine is provisioned. The
+Select the delivery path that matches how you provision the machine. The
 credential payload is the same in all cases:
 
 ```
@@ -66,8 +66,8 @@ SWARM_TOKEN=SWMTKN-1-<your-worker-token>
 SWARM_MANAGER=10.0.0.10:2377
 ```
 
-**Kickstart is the primary path.** Production `bootc-mke3` machines are
-provisioned from the ISO (bare metal), where kickstart is the standard
+**Kickstart is the primary path.** You provision production `bootc-mke3`
+machines from the ISO (bare metal), where kickstart is the standard
 customization mechanism. Cloud-init applies **only to the cloud-platform
 builds** (AMI/QCOW2). It does not exist on bare-metal ISO installs. AMI
 builds are mainly for internal testing. QCOW2 is publicly announced and
@@ -80,7 +80,7 @@ join does not apply them. Read [What else should the provisioning payload
 include?](#what-else-should-the-provisioning-payload-include) before you
 copy an example below.
 
-#### Bare metal (kickstart — the standard path; file shredded after join)
+#### Bare metal (kickstart, the standard path, file shredded after join)
 
 Append the credential file to the kickstart `%post`. Add the optional items
 from [What else should the provisioning payload
@@ -103,16 +103,16 @@ firewall-cmd --reload
 %end
 ```
 
-The credential file is written to disk. It is shredded automatically after a
-confirmed join.
+The kickstart writes the credential file to disk. The join service shreds it
+automatically after the join succeeds.
 
-#### Cloud (cloud-init user-data — cloud builds only; tmpfs delivery)
+#### Cloud (cloud-init user-data, cloud builds only, tmpfs delivery)
 
 This applies only to the cloud-platform builds (AMI/QCOW2). AMI is mainly for
-internal testing. QCOW2 is publicly announced and downloadable. The
-credential file is written to tmpfs and never touches the disk. Cloud-init
-separately caches the raw user-data under `/var/lib/cloud`. This cache is
-scrubbed automatically after a successful join.
+internal testing. QCOW2 is publicly announced and downloadable. Cloud-init
+writes the credential file to tmpfs, and it never touches the disk.
+Cloud-init separately caches the raw user-data under `/var/lib/cloud`. The
+join service scrubs this cache automatically after a successful join.
 
 The cloud-config below does the same firewalld steps as the kickstart path
 above. Pass it as instance user-data (for example `aws ec2 run-instances
@@ -152,7 +152,7 @@ source has precedence over both file paths.
 No other action is necessary. On first boot, after Docker is healthy, each
 machine joins the swarm as a worker. MKE onboards it automatically.
 
-### 4. Rotate the join token (after the batch has joined)
+### 4. Rotate the join token (after the batch joins)
 
 After every machine in the batch appears in `docker node ls`, rotate the
 worker token on a manager:
@@ -161,7 +161,7 @@ worker token on a manager:
 docker swarm join-token --rotate worker
 ```
 
-Rotation invalidates the token that was used for the batch. A leaked copy
+Rotation invalidates the token that you used for the batch. A leaked copy
 (user-data snapshot, kickstart archive, or a token read from a console
 screen) can no longer join the cluster. Machines that already joined are not
 affected. The next batch starts again at step 1 with the new token.
@@ -176,7 +176,7 @@ kubectl get nodes
 ```
 
 `docker node ls` and the MKE UI (Shared Resources → Nodes) also list the
-node. Use both only as secondary information. A confirmed anomaly (from
+node. Use both only as secondary information. An anomaly (from
 `ucp-controller`) can cause a `Ready`, schedulable worker to show `Down` in
 `docker node ls` indefinitely. The message is "Node not yet found in classic
 node inventory". This does not mean that the node is broken. Do not block a
@@ -184,8 +184,8 @@ batch, and do not start troubleshooting, on `docker node ls` or the MKE UI
 alone. Check `kubectl get nodes` first.
 
 > [!NOTE]
-> `Ready` in `kubectl get nodes` does not mean that the local firewall of the
-> node is configured. `mke-images.service` is ordered `Before=getty.target`
+> `Ready` in `kubectl get nodes` does not mean that the node finished
+> configuring its local firewall. `mke-images.service` has `Before=getty.target`
 > (`WantedBy=getty.target`). This places it before `multi-user.target` in
 > the boot sequence. `cloud-final.service` runs the cloud-init `runcmd`
 > (that is, the firewalld steps above on cloud builds). It depends on
@@ -211,9 +211,10 @@ cat /var/lib/mke3/joined                          # UTC join timestamp
 docker info --format '{{.Swarm.LocalNodeState}}'  # active
 ```
 
-No token residue remains. `/etc/mke3/swarm-join.env` is shredded (bare
-metal). `/run/mke3` is RAM-only (cloud). The cached copies of user-data from
-cloud-init are scrubbed. The token value does not appear in any log.
+No token residue remains. The join service shreds `/etc/mke3/swarm-join.env`
+(bare metal). `/run/mke3` is RAM-only (cloud). The join service scrubs the
+cached copies of user-data from cloud-init. The token value does not appear
+in any log.
 
 ## Troubleshooting
 
@@ -223,11 +224,11 @@ First, examine `journalctl -u swarm-join` on the machine. A failure logs a
 | Symptom | Likely cause | Remediation |
 |---|---|---|
 | `failed to join swarm after 5 attempts` | Manager unreachable: wrong `SWARM_MANAGER`, or TCP `2377` blocked | Run `nc -vz <manager> 2377` from the machine. Correct the address or the firewall. Re-trigger the join |
-| Join rejected on every attempt | The token was rotated on the swarm, or a manager token was supplied | Issue a new token with `docker swarm join-token -q worker`. Inject it again. Re-trigger the join |
+| Join rejected on every attempt | You rotated the token on the swarm, or you supplied a manager token | Issue a new token with `docker swarm join-token -q worker`. Inject it again. Re-trigger the join |
 | `SWARM_TOKEN and SWARM_MANAGER must both be set` | Malformed or partial env file | Correct the injected file. Both keys are necessary, and `SWARM_MANAGER` needs `:2377` |
 | `Docker not ready after 300s` | `docker.service` failed to start | Diagnose with `systemctl status docker` on the machine. Correct the fault. Re-trigger the join |
-| Unit exits 0, no join, no sentinel | No credential was injected (wrong path, user-data not applied) | Make sure that the file exists at `/run/mke3/swarm-join.env` or `/etc/mke3/swarm-join.env`. Inject it and reboot |
-| Unit does nothing on boot | Sentinel `/var/lib/mke3/joined` is present from a prior join | This is expected. To force a re-join, remove the sentinel and enable the unit again |
+| Unit exits 0, no join, no sentinel | You injected no credential (wrong path, user-data not applied) | Make sure that the file exists at `/run/mke3/swarm-join.env` or `/etc/mke3/swarm-join.env`. Inject it and reboot |
+| Unit does nothing on boot | Sentinel `/var/lib/mke3/joined` is present from a prior join | This is normal behavior. To force a re-join, remove the sentinel and enable the unit again |
 
 ### Re-triggering a join
 
@@ -274,17 +275,17 @@ join is the standard process for all additions after the initial install.
 ### Is the join secure against a rogue manager?
 
 The `SWMTKN-1-<ca-hash>-<secret>` token contains the cluster CA hash. The
-joining node therefore validates the TLS certificate of the manager as part
+joining node therefore checks the TLS certificate of the manager as part
 of the join.
 
 ### What else should the provisioning payload include?
 
 The no-touch join adds the machine to the cluster and changes nothing else
 on it. Whatever provisions the machine applies anything else that the
-machine needs. This is done in the same kickstart `%post` or cloud-init
-configuration that carries the join credential.
+machine needs, in the same kickstart `%post` or cloud-init configuration
+that carries the join credential.
 
-**Hardening.** For a cluster that is expected to be hardened, these two
+**Hardening.** For a cluster that you plan to harden, these two
 actions also belong in the payload. Mask sshd and revoke the sudo of the
 provisioning user. See
 [Does the joined machine end up hardened (sshd masked, sudo
@@ -293,8 +294,8 @@ revoked)?](#does-the-joined-machine-end-up-hardened-sshd-masked-sudo-revoked).
 **Firewall rules.** The firewalld of a fresh machine is active by default.
 It ships only the `ssh`, `cockpit` and `dhcpv6-client` services, and none of
 the cluster ports. The join succeeds because it is outbound-only. But the
-machine cannot receive inbound gossip and overlay traffic until the firewall
-is opened. There are two options:
+machine cannot receive inbound gossip and overlay traffic until you open the
+firewall. There are two options:
 
 - Open the cluster ports. Use the same zones and services that a worker gets
   from `tasks/mke-open-ports-tasks.yml` of the installer. The `public` zone is
@@ -345,8 +346,8 @@ write_files:
 `kernel.modules_disabled` setting applies.
 
 **The time when it takes effect is different for each path.** A kickstart
-`%post` writes into the installed tree, so the module is loaded on the
-*first* boot of the machine. Cloud-init is different. `write_files` and
+`%post` writes into the installed tree, so the machine loads the module on
+the *first* boot. Cloud-init is different. `write_files` and
 `runcmd` both run after `systemd-modules-load.service` finishes.
 Creating the drop-in does not run it again. On the cloud path, the module
 therefore loads from the *second* boot onward.
@@ -378,7 +379,7 @@ nothing else. `swarm-join.service` and `/usr/libexec/swarm-join` need neither
 sshd nor sudo. You can therefore apply the hardening before, during or after
 the join, and it does not affect the join.
 
-For a cluster that is expected to be hardened, add both of the following to the
+For a cluster that you plan to harden, add both of the following to the
 provisioning configuration.
 
 Revoke the sudo of the provisioning user. Substitute the user that your
@@ -405,8 +406,8 @@ Notes:
   `Wants=sshd.service`. This activates a disabled unit on every boot. Only a
   masked unit stays inactive across reboots. See
   [Harden MKE 3 Kubernetes](harden-mke3-kubernetes.md).
-- **A reboot is not necessary.** In a kickstart `%post`, the mask and the
-  sudo removal are written into the installed tree. The first boot of the
+- **A reboot is not necessary.** In a kickstart `%post`, the kickstart writes
+  the mask and the sudo removal into the installed tree. The first boot of the
   machine is then already hardened. In cloud-init `runcmd`,
   `systemctl mask --now sshd` stops the running daemon and installs the mask
   in the same call.
@@ -414,12 +415,12 @@ Notes:
   first, an existing SSH session drops before the revocation can run. It is
   safe to revoke sudo first, because the shell is already root and the loss
   of `wheel` does not affect it.
-- If you mask sshd before the join is confirmed, no shell access is left to
+- If you mask sshd before the join succeeds, no shell access remains to
   diagnose a failed join. A one-shot `runcmd` test for
   `/var/lib/mke3/joined` is not a usable gate. `cloud-final.service` can run
   while the join is still retrying. It then finds no sentinel, skips the
   hardening, and never runs again. To keep a diagnosis window, do one of
-  these two things. Install a unit that is ordered after `swarm-join.service`,
+  these two things. Install a unit that starts after `swarm-join.service`,
   waits for the sentinel, and then hardens. Or harden as a separate step after
   the machine reports `Ready`. In both cases, decide what happens to a machine
   whose join never succeeds.
@@ -428,10 +429,10 @@ Notes:
   only unmask, the daemon stays stopped.
 
 If a configuration also hardens the kernel with
-`kernel.modules_disabled = 1`, the module subsystem is locked after the
-sysctl applies. Any module that is loaded on demand after that point fails.
+`kernel.modules_disabled = 1`, the module subsystem locks after the
+sysctl applies. Any on-demand module load after that point fails.
 Current images ship `0` in `/usr/lib/sysctl.d/20-secure-kernel-params.conf`.
-Do not assume either setting. Verify the live value with
+Do not assume either setting. Check the live value with
 `sysctl kernel.modules_disabled`. Under the lockdown, the image still
 preloads the modules that MKE and Calico need. The lockdown therefore
 affects only a workload that needs a different module. Preload that module

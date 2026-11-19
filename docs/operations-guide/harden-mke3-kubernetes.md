@@ -1,19 +1,19 @@
 # Harden MKE3 / Kubernetes
 
-This guide shows a system engineer how to configure a `bootc-mke3` cluster for a secure baseline. It covers the host hardening that is already built into the Ansible tooling of this repository. It also covers the additional MKE and Kubernetes controls that are necessary after `cluster-upgrade-controller` and/or `machine-config-controller` are installed. It implements the mitigations from the [controller security analysis](controller-security-analysis.md). Read that document first to understand the *why* behind each step here.
+This guide shows a system engineer how to configure a `bootc-mke3` cluster for a secure baseline. It covers the host hardening that the Ansible tooling of this repository already includes. It also covers the additional MKE and Kubernetes controls that you need after you install `cluster-upgrade-controller` and/or `machine-config-controller`. It implements the mitigations from the [controller security analysis](controller-security-analysis.md). Read that document first to understand the *why* behind each step here.
 
 ## Prerequisites
 
 1. A working `bootc-mke3` cluster (see [installation runbook](../installation-guide/install-bootc-mke3.md)).
 2. MKE3 admin credentials and/or a Kubernetes client bundle with `cluster-admin` (the client bundle is from `ansible/mke-client-bundle-playbook.yml`).
 3. `kubectl` and, for the policy steps, [Kyverno](https://kyverno.io/) or [OPA Gatekeeper](https://open-policy-agent.github.io/gatekeeper/) installed, if you want to enforce admission policies (steps 5–6 are optional, but we recommend them).
-4. If `cluster-upgrade-controller` and/or `machine-config-controller` are deployed, find the namespaces in which they and `system-upgrade` run (`mke` and `system-upgrade` by default, per `ansible/vars/common-vars.yml`).
+4. If you deploy `cluster-upgrade-controller` and/or `machine-config-controller`, find the namespaces in which they and `system-upgrade` run (`mke` and `system-upgrade` by default, per `ansible/vars/common-vars.yml`).
 
 ## Procedure
 
 ### 1. Host hardening at install time
 
-These controls already exist in the Ansible tooling. Make sure that they are enabled for production clusters in `ansible/vars/common-vars.yml`:
+These controls already exist in the Ansible tooling. Enable them for production clusters in `ansible/vars/common-vars.yml`:
 
 | Variable | Recommended | Effect |
 |---|---|---|
@@ -23,16 +23,16 @@ These controls already exist in the Ansible tooling. Make sure that they are ena
 
 If you need SSH or console access later (for example, to run `bootc rollback` manually, as the [upgrade runbook](upgrade-with-ansible.md#upgrade-rollback) describes), re-enable it deliberately. Revoke it again afterward. Do not depend on the install-time policy as the only control.
 
-Private registry credentials are written to `/etc/ostree/auth.json` with mode `0600`, root:root (`ansible/tasks/private-reg-creds-tasks.yml`). Verify this after the install. Do not widen the mode.
+The Ansible tooling writes private registry credentials to `/etc/ostree/auth.json` with mode `0600`, root:root (`ansible/tasks/private-reg-creds-tasks.yml`). Check this after the install. Do not widen the mode.
 
 ### 2. Re-scope MKE scheduling/privilege grants after SUC install
 
 `ansible/tasks/suc-priv-grant-tasks.yml` runs automatically when `deploy_suc: true` (default). It sets the correctly-scoped `system-upgrade:system-upgrade` privileged grant. It also sets two cluster-wide MKE policies that are broader than SUC needs:
 
 - `enable_admin_ucp_scheduling = true`. This lets **all** authenticated users and service accounts schedule on manager and MSR nodes.
-- The `Scheduler` role is granted to the `authenticated` alias on the root Swarm collection.
+- The playbook grants the `Scheduler` role to the `authenticated` alias on the root Swarm collection.
 
-Check if your MKE version can scope these grants to the SUC and controller service accounts instead of "all authenticated principals". Do this after you confirm that SUC and the controllers are healthy. If it can, narrow them:
+Check if your MKE version can scope these grants to the SUC and controller service accounts instead of "all authenticated principals". Do this after you check that SUC and the controllers are healthy. If it can, narrow them:
 
 ```bash
 # Inspect current grants
@@ -166,7 +166,7 @@ spec:
                 image: "registry.mirantis.com/* | registry.ci.mirantis.com/*"
 ```
 
-In the same way, restrict the `MachineConfigChange` `spec.kernel.sysctl` keys to a known-safe set if your compliance posture requires it. The CRD validates only the key *syntax* and not the semantics (see [security analysis §3.3](controller-security-analysis.md#33-what-the-generated-plans-actually-do-on-nodes)).
+In the same way, restrict the `MachineConfigChange` `spec.kernel.sysctl` keys to a known-safe set if your compliance posture requires it. The CRD checks only the key *syntax* and not the semantics (see [security analysis §3.3](controller-security-analysis.md#33-what-the-generated-plans-actually-do-on-nodes)).
 
 ### 7. Enable etcd encryption at rest
 
@@ -214,13 +214,13 @@ rules:
 ## Expected Results
 
 - Nodes have no standing SSH/sudo path after install-time hardening runs (step 1).
-- MKE scheduling and privilege grants are scoped to what SUC needs, and not to "all authenticated principals" (step 2).
+- MKE scheduling and privilege grants cover only what SUC needs, and not "all authenticated principals" (step 2).
 - Only an audited admin group or SA can create or edit `ClusterUpgrade`, `MachineConfigChange` and `Plan` objects. Everyone else gets read-only visibility (step 3).
-- `system-upgrade` is the only namespace that is permitted to run privileged pods. All other namespaces enforce `restricted` (step 4).
+- `system-upgrade` is the only namespace that can run privileged pods. All other namespaces enforce `restricted` (step 4).
 - Controller metrics/health endpoints are reachable only from the monitoring namespace (step 5).
-- Attacker-controlled image and artifact references are limited to approved registries (step 6).
-- Secrets and config that the controllers manage are encrypted at rest (step 7).
-- Any create, update or delete on the resources that can escalate privilege is captured in the audit log (step 8).
+- Attacker-controlled image and artifact references can come only from approved registries (step 6).
+- The API server encrypts the secrets and config that the controllers manage (step 7).
+- The audit log records any `create`, `update` or `delete` on the resources that can escalate privilege (step 8).
 
 ## Ongoing operational hygiene
 

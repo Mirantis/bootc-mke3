@@ -8,7 +8,7 @@ Obey these limitations:
 1. You must use a single MCR and MKE3 version across the existing cluster. The bootc-mke3 machines that you add must be based on the same versions.
 2. You cannot use the bootc-mke3 cluster tooling for installation and upgrade until the cluster contains only bootc-mke3 based machines.
 
-The manual SSH-based docker swarm join/promote/demote workflow below is intended only for the classic-to-bootc migration scenario. In this scenario, you have direct docker CLI access to an existing classic cluster. To add new bootc-mke3 machines to a cluster that is already fully bootc-mke3, use the standard no-touch join mechanism: [Join machines with no-touch](join-machines-no-touch.md).
+The manual SSH-based docker swarm join/promote/demote workflow below is for only the classic-to-bootc migration scenario. In this scenario, you have direct docker CLI access to an existing classic cluster. To add new bootc-mke3 machines to a cluster that is already fully bootc-mke3, use the standard no-touch join mechanism: [Join machines with no-touch](join-machines-no-touch.md).
 
 ## Migrating to bootc-mke3 from a classic MCR/MKE3 cluster
 
@@ -148,7 +148,7 @@ docker swarm join --token [worker join token] [manager-host]:2377
 ``` 
 See the [docker swarm join reference](https://docs.docker.com/reference/cli/docker/swarm/join/).
 
-Note: `[manager-host]` is the address of an existing manager. To get the address, run `docker info --format '{{.Swarm.NodeAddr}}'` on a manager. On some Docker versions, the output of the join-token command also shows the address.
+Note: `[manager-host]` is the address of an existing manager. To retrieve the address, run `docker info --format '{{.Swarm.NodeAddr}}'` on a manager. On some Docker versions, the output of the join-token command also shows the address.
 
 > [!NOTE]
 > This command joins the machine as a new worker.

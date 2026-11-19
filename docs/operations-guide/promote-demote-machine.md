@@ -82,22 +82,22 @@ watch -n5 'docker node ls; kubectl get nodes'
 
 ## Expected Results
 
-- `docker node ls` shows the new role: `ManagerStatus` is populated for a
-  manager and empty for a worker. `docker info` reports the new manager count.
+- `docker node ls` shows the new role: `ManagerStatus` has a value for a
+  manager and is empty for a worker. `docker info` reports the new manager count.
 - MKE updates the Kubernetes side **without any `kubectl` command from
   you**. A manager has the `node-role.kubernetes.io/master` label and the
   `com.docker.ucp.manager:NoSchedule` taint. A demoted machine has no label and
   no taint, and it can run ordinary workloads.
 - On a demoted machine, the manager-only containers (`ucp-controller`,
-  `ucp-kv`, `ucp-auth-api`) are gone. The worker-side agents keep running. This
-  was verified by inspection of the engine of the machine after a demotion.
+  `ucp-kv`, `ucp-auth-api`) are gone. The worker-side agents keep running. We
+  verified this by inspection of the engine of the machine after a demotion.
 - `docker node ls` reports every machine as `Ready`, and no machine is `Down`.
 
 ## Troubleshooting
 
 ### The machine shows `Down` immediately after promotion
 
-This is expected for a short time. Promotion restarts MKE components on the
+This is normal for a short time. Promotion restarts MKE components on the
 machine, and the machine shows `Down` in Swarm for a few seconds during the
 restart. We expect it to reach `Ready` well inside a minute (measured: about
 30 seconds). If it is still `Down` after a few minutes, treat it as a node

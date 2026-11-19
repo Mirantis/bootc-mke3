@@ -11,7 +11,7 @@ The identity that runs the support runbooks decides if you need the grant:
 
 | Creating identity | Grant needed? |
 |---|---|
-| MKE admin client bundle (what `mke-install-playbook.yml` fetches) | No. Admins bypass the attribute check. |
+| MKE admin client bundle (what `mke-install-playbook.yml` fetches) | No. Admins bypass the attribute restriction. |
 | Any non-admin MKE user, even with Kubernetes RBAC to create pods | **Yes**. MKE refuses the creation without the grant. |
 
 Apply the grant if non-admin operators do support work. Skip it if every
@@ -37,7 +37,7 @@ Accept these consequences before you do the procedure:
 - Grant the narrowest ServiceAccount possible, in a namespace created for this
   purpose. Restrict `create pods` in that namespace to cluster administrators.
 - The grant is persistent cluster configuration. It stays in effect until you
-  remove it (see [Revoke the grant](#revoke-the-grant)).
+  delete it (see [Revoke the grant](#revoke-the-grant)).
 
 ## Requirements
 
@@ -142,7 +142,7 @@ rm -f mke-config.toml     # the file is cluster configuration, not a secret, but
 ```
 
 > Use `-k`/`--insecure` only while MKE uses its self-signed certificate.
-> Remove the option when MKE has a trusted certificate.
+> Delete the option when MKE has a trusted certificate.
 
 The change takes effect at the next admission decision. You do not need to
 restart MKE. A creation that MKE refused seconds before succeeds at the first
@@ -151,7 +151,7 @@ entry stays after the edit.
 
 ### 3. Verify the grant
 
-Create a pod that requests all three attributes on a real node. Check that
+Create a pod that requests all three attributes on a real node. Verify that
 admission accepts the pod. Use any node name from `kubectl get nodes`:
 
 ```sh
@@ -165,7 +165,7 @@ error above. The pod runs `true` and exits.
 
 ## Expected Results
 
-- The `grant-check` pod in step 3 is created and not denied.
+- MKE creates the `grant-check` pod in step 3 and does not deny it.
 - The support pods in [node-debug-shell.md](node-debug-shell.md) and
   [collect-support-bundles.md](collect-support-bundles.md) start on their
   target nodes.
@@ -202,7 +202,7 @@ The helper differs from the playbook in two ways:
 
 ## Revoke the grant
 
-Remove `cluster-support:default` from `priv_attributes_service_accounts`. Send
+Delete `cluster-support:default` from `priv_attributes_service_accounts`. Send
 the TOML back with PUT. Then delete the namespace:
 
 ```sh
@@ -220,7 +220,7 @@ populated. It lists what you *can* grant. Without an entry in
 No. With an admin client bundle, both support runbooks create and run their
 debug shell Pods and capture Jobs. The allowlist needs only
 `system-upgrade:system-upgrade`. Capture Jobs are not an exception. The
-non-admin check does not apply to the pods that the Job controller creates.
+non-admin restriction does not apply to the pods that the Job controller creates.
 
 Apply the grant when non-admin MKE users do support work. MKE refuses those
 operators without the grant, even when Kubernetes RBAC lets them create pods in

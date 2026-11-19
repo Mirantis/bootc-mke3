@@ -1,7 +1,7 @@
 # Image architecture
 
 This document describes what a `bootc-mke3` image contains, which parts of
-it are fixed at build time, and where the supported customisation points
+it the build fixes, and where the supported customisation points
 are. It is for operators who must know what is always present on a node
 and what they must add at provision time.
 
@@ -10,10 +10,10 @@ and what they must add at provision time.
 `bootc-mke3` is a bootc/ostree image. The filesystem has three different
 behaviours:
 
-- **`/usr` is immutable and is replaced completely on upgrade.** Data that
-  is written there at runtime does not survive. The image vendor puts
+- **`/usr` is immutable. The upgrade replaces it completely.** Data that
+  a process writes there at runtime does not survive. The image vendor puts
   all vendor files there.
-- **`/etc` is three-way merged on upgrade.** Operator edits survive. If
+- **The upgrade does a three-way merge of `/etc`.** Operator edits survive. If
   the image also contains a file and the operator changed it, that file
   does not get the image updates to that file.
 - **`/var` is machine-local** and persists across upgrades.
@@ -36,19 +36,19 @@ module set that is available to a node is mostly fixed at boot.
 | `/usr/lib/sysctl.d/20-secure-kernel-params.conf` | Sets `kernel.modules_disabled`, together with `kernel.dmesg_restrict` and `kernel.yama.ptrace_scope` |
 
 The unit order makes the preload effective.
-`systemd-modules-load.service` is ordered `Before=systemd-sysctl.service`.
+`systemd-modules-load.service` runs `Before=systemd-sysctl.service`.
 Therefore the system loads every module in any `modules-load.d` directory
 before it applies `kernel.modules_disabled`.
 
 > [!IMPORTANT]
 > **Current images have `kernel.modules_disabled = 0`**, so modules load
-> on demand after boot. The value was `1` on images that were built before
+> on demand after boot. The value was `1` on images from builds before
 > `bootc-mirantis` commit `4a31416` (2026-09-28). Read the live value with
 > `sysctl kernel.modules_disabled` before you rely on either behaviour.
 >
-> Where the value is `1`, it is a **one-way latch**. No module can be loaded
+> Where the value is `1`, it is a **one-way latch**. The kernel can load no module
 > for the remainder of the boot session. `modprobe` cannot load a module,
-> a kernel autoload that is triggered on demand cannot load a module, and a
+> an on-demand kernel autoload cannot load a module, and a
 > sysctl change cannot load a module. A `MachineConfigChange` also cannot
 > load a module. The only way to get a module is to list it before the latch
 > applies. In practice, this means that you change the module list and reboot.
@@ -87,9 +87,9 @@ Hardware and root-filesystem modules are intentionally not in the list.
 dracut and udev load those modules for the hardware that they detect.
 
 > [!NOTE]
-> The list is extended when products need it. The Calico Enterprise
-> requirements, including `ipip` for its default encapsulation mode, were
-> added on 2026-09-08. They are in every image that was built after that
+> `bootc-mirantis` extends the list when products need it. It added the Calico Enterprise
+> requirements, including `ipip` for its default encapsulation mode, on
+> 2026-09-08. They are in every image that `bootc-mirantis` built after that
 > date. On an older image, you must add a module that the list does not yet
 > contain through the extension point below. This needs a reboot.
 > Compare the file on the node with what your workloads need. Do not assume
@@ -112,7 +112,7 @@ drop-in takes effect depends on when you create it:
 
 | Created | Effective |
 |---|---|
-| Kickstart `%post` | **First boot**, no extra reboot. The drop-in is written into the installed tree before the first boot |
+| Kickstart `%post` | **First boot**, no extra reboot. The installer writes the drop-in into the installed tree before the first boot |
 | Cloud-init (`write_files`/`runcmd`) | **Second boot**. Both run after `systemd-modules-load.service` is already complete, and a new drop-in does not run it again. To get the module on first boot, run `modprobe` for it together with the write (possible while `kernel.modules_disabled` is `0`), or reboot after provisioning. Under the lockdown, a reboot is the only method |
 | On an already-running node | **After one reboot**, or immediately with `modprobe` while `kernel.modules_disabled` is `0` |
 
@@ -135,7 +135,7 @@ and the worked NFS example in
 
 ## NetworkManager
 
-NetworkManager is installed and enabled. The image contains
+The image installs and enables NetworkManager. The image contains
 `/usr/lib/NetworkManager/conf.d/10-calico-unmanaged.conf`. This file marks
 the Calico interfaces as unmanaged, so NetworkManager does not compete
 with Calico for their configuration:
@@ -167,10 +167,10 @@ To override the file, put a file with the same name in
 | `swarm-join.service` (with `/usr/libexec/swarm-join`) | No-touch worker join, gated on the `/var/lib/mke3/joined` sentinel. See [no-touch join](../operations-guide/no-touch-join.md) |
 | `cri-dockerd-mke.service` / `cri-dockerd-mke.socket` | The MKE CRI shim for the Docker engine |
 
-Only `mke-images.service` and `swarm-join.service` are enabled at image
-build time (`systemctl enable mke-images swarm-join.service`). The
-`cri-dockerd-mke` units are in the image as definitions. They are not
-enabled.
+The image build enables only `mke-images.service` and `swarm-join.service`
+(`systemctl enable mke-images swarm-join.service`). The
+`cri-dockerd-mke` units are in the image as definitions. The build does not
+enable them.
 
 The image also contains:
 

@@ -17,13 +17,13 @@ install flag.
 
 1. A cluster on which **`mke-install-playbook.yml` has not yet run**. This
    customization is possible only at install time. If you enable it after
-   MKE is installed, it does not rotate a live certificate. See the F.A.Q below.
+   you install MKE, it does not rotate a live certificate. See the F.A.Q below.
 2. A certificate bundle in PEM format:
    - `ca.pem` — root CA public certificate.
    - `cert.pem` — server certificate plus any intermediate CA certificates.
      **It must already include Subject Alternative Names (SANs)** for
      `mke_url` (the ansible inventory var) and for any load balancer address
-     that is used to reach MKE. MKE does not add SANs to a certificate that
+     that you use to reach MKE. MKE does not add SANs to a certificate that
      you supply. It rejects requests for host names that the certificate
      does not include.
    - `key.pem` — unencrypted server private key that matches `cert.pem`.
@@ -44,7 +44,7 @@ install flag.
    the literal PEM content. This is the same convention as `mke_config_src`.
    See the [install runbook's F.A.Q](install-bootc-mke3.md#faq). Ansible copies
    a single shared cert/key to each manager node. MKE automatically
-   propagates it to managers that join or are promoted later.
+   propagates it to managers that join or that you promote later.
 
 2. Run the installer as usual:
 
@@ -76,7 +76,7 @@ install flag.
 
 ### Can I rotate the certificate on an already-installed cluster?
 
-Not through this playbook. The Mirantis MKE 3.9 documentation describes
+You cannot do this through this playbook. The Mirantis MKE 3.9 documentation describes
 only a live-rotation path through the MKE web UI (**\<user name\> →
 Admin Settings → Certificates** → upload key/cert/CA → **Save**). It does
 not describe a CLI or API equivalent. For a live rotation, use the web UI.
@@ -84,7 +84,7 @@ Or set `mke_external_certs_enabled` and reprovision for a fresh install.
 
 ### Can different managers use different certificates?
 
-Not with this integration as implemented. `tasks/mke-external-certs-tasks.yml`
+This integration, as implemented, does not support this. `tasks/mke-external-certs-tasks.yml`
 copies one shared bundle to each manager. MKE itself supports per-node
 certificates that share a common SAN (see the upstream reference below).
 To automate that, you would need per-host variables. This repo does not

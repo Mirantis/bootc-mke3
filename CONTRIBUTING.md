@@ -45,7 +45,7 @@ repository root:
 | :---- | :------- | :----- | :------- |
 | yamllint | [`lint.yml`](.github/workflows/lint.yml) | [`.yamllint`](.yamllint) | Errors fail. Warnings are advisory |
 | ShellCheck | [`lint.yml`](.github/workflows/lint.yml) | [`.shellcheckrc`](.shellcheckrc) | Errors and warnings fail. Info and style are advisory |
-| ansible-lint | [`ansible-lint.yml`](.github/workflows/ansible-lint.yml) | [`.ansible-lint`](.ansible-lint) | Advisory only, until the known backlog is worked down |
+| ansible-lint | [`ansible-lint.yml`](.github/workflows/ansible-lint.yml) | [`.ansible-lint`](.ansible-lint) | Advisory only, until we work down the known backlog |
 
 Run the checks locally before you push. Install
 [yamllint](https://yamllint.readthedocs.io/),

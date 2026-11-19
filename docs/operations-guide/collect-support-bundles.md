@@ -133,9 +133,9 @@ kubectl -n cluster-support delete job -l app=log-capture
 ```
 
 Finished Jobs delete themselves one hour after they complete
-(`ttlSecondsAfterFinished: 3600`). Bundles that are written to
-`/var/log/cluster-support` on a node are **not** deleted automatically. Delete
-them from the debug shell after you collect them.
+(`ttlSecondsAfterFinished: 3600`). The Job does **not** delete the bundles that
+it writes to `/var/log/cluster-support` on a node. Delete them from the debug
+shell after you collect them.
 
 ## Expected Results
 
@@ -169,13 +169,13 @@ comments:
 | `JOURNAL_SINCE` | Passed without change to `journalctl --since`. The default is `24 hours ago`. |
 
 The `mke3` collector is the expensive collector. It is the only collector that can
-run for many minutes. If you remove it (`COLLECTORS: "journal mcr bootc system"`),
+run for many minutes. If you leave it out (`COLLECTORS: "journal mcr bootc system"`),
 the capture finishes in seconds. The capture then does not contain the MKE-level
 bundle that a support case usually needs.
 
 ## Destinations
 
-A destination is enabled when you mount it or set its bucket. Only the Job
+The Job enables a destination when you mount it or set its bucket. Only the Job
 manifest makes this decision. You can use any combination of destinations. Every
 enabled destination receives the same tarball.
 
@@ -195,17 +195,17 @@ destination needs storage that you provision yourself.
 
 [`pvc-hostpath-dev-test.yaml`](../examples/cluster-support/pvc-hostpath-dev-test.yaml)
 is a node-local claim with two objects. Use it to test this destination on a
-cluster that has no storage. It is labelled dev/test because it is not a shared
+cluster that has no storage. We label it dev/test because it is not a shared
 destination. Read the next paragraph before you use it for real work.
 
 > [!IMPORTANT]
 > Only shared storage collects bundles into one place. The access mode of the
-> claim does not show if your storage is shared.
+> claim does not show whether several nodes share your storage.
 
-Access modes are metadata. They are not enforced. Nothing enforces them for a
+Access modes are metadata, and nothing enforces them for a
 node-local volume (`hostPath`, `local`). Such volumes have no attach step, and
 these pods bypass the scheduler because they set `spec.nodeName`. The next table
-shows the result with one claim and three nodes that are captured at the same
+shows the result with one claim and three nodes that you capture at the same
 time:
 
 | Claim declares | Result |
@@ -217,8 +217,8 @@ Node-local storage with `ReadWriteMany` gives only a false impression of
 shared storage. For one collection point, back the claim with storage that is
 shared. Examples are NFS, CephFS, an EFS-class service, or a CSI driver that
 offers a true `ReadWriteMany` volume. With such storage, this destination does
-what it promises. In a test with a `ReadWriteMany` claim, three nodes were
-captured at the same time. All three bundles were put side by side in the one
+what it promises. In a test with a `ReadWriteMany` claim, we captured three nodes at the same time.
+All three bundles landed side by side in the one
 claim. If shared storage is not available, we recommend the hostPath
 destination. This destination is clear that it is per-node. Retrieve the
 bundles with a debug shell.
@@ -226,7 +226,7 @@ bundles with a debug shell.
 On **attachable** storage (CSI block volumes such as EBS), a `ReadWriteOnce`
 volume cannot attach to more than one node. The pods on the other nodes then
 cannot mount the volume, and their Jobs fail at `activeDeadlineSeconds`. This
-result comes from reasoning and was not tested, because a default cluster has
+result comes from reasoning. We did not test it, because a default cluster has
 no CSI driver.
 
 > [!WARNING]
@@ -246,19 +246,19 @@ With a statically bound claim, a capture logs
 
 #### How this was tested, and the one bootc-specific trap
 
-An in-cluster NFS server produced the shared-storage result above. It was used
-only because it is the cheapest way to get a real `ReadWriteMany` volume on a
+An in-cluster NFS server produced the shared-storage result above. We used it
+only because it is the cheapest way to provide a real `ReadWriteMany` volume on a
 cluster that has no storage. **NFS is not part of the expected deployment.**
 An operator who uses this destination must point it at the storage that the
 cluster already has. This section records the NFS setup because it showed one
 fact about `bootc-mke3` nodes. The fact applies to any claim that NFS backs.
 
-When this was recorded, a stock node could not mount NFS. The image contained
+When we recorded this, a stock node could not mount NFS. The image contained
 `nfs-utils`, `mount.nfs`, `rpcbind`, and the modules on disk. But the node set
 `kernel.modules_disabled=1` and booted with only `sunrpc` loaded. Because of
-this, the NFS modules could not be loaded on demand. Current images set
-`kernel.modules_disabled = 0`, which should permit loading on demand. This was
-not tested again for NFS. The mount error shows which module is missing:
+this, the node could not load the NFS modules on demand. Current images set
+`kernel.modules_disabled = 0`, which should permit loading on demand. We did
+not test this again for NFS. The mount error shows which module is missing:
 
 | Modules loaded at boot | `mount.nfs` says |
 |---|---|
@@ -268,7 +268,7 @@ not tested again for NFS. The mount error shows which module is missing:
 
 The remedy is the usual one, and the lockdown does not prevent it. List the
 modules in a `/etc/modules-load.d/*.conf` file and reboot. This works because
-`systemd-modules-load.service` is ordered `Before=systemd-sysctl.service`, so it
+`systemd-modules-load.service` declares `Before=systemd-sysctl.service`, so it
 runs while loading is still permitted. The trap is the middle row: if you
 preload only `nfs`, it looks sufficient but it is not. For a whole cluster, let
 `machine-config-controller` maintain that drop-in (`spec.kernel.modules.load`,
@@ -294,7 +294,7 @@ kubectl -n cluster-support create secret generic s3-credentials \
   --from-literal=secretAccessKey=<secret>
 ```
 
-The object is written to
+The Job writes the object to
 `<S3_ENDPOINT>/<S3_BUCKET>/<S3_PREFIX><name>-<node>-<timestamp>.tar.gz`.
 `S3_PREFIX` is a literal prefix. Include the trailing `/` if you want a
 folder. If `S3_REGION` is not set, it defaults to `us-east-1`. This matters
@@ -318,7 +318,7 @@ For the S3 destination, replace the image and command of the collector container
           command: ["sh","-c","apk add --no-cache bash util-linux tar gzip curl >/dev/null && exec bash /scripts/capture.sh"]
 ```
 
-This was verified end to end (curl 8.14.1). The image does not change the
+We verified this end to end (curl 8.14.1). The image does not change the
 collectors. Every host command runs through `nsenter --target 1` against the
 binaries of the node. Therefore the container needs only `bash`, `nsenter`,
 `tar`, `gzip`, and `curl`. In an air-gapped cluster, mirror an image that
@@ -334,7 +334,7 @@ A capture is fault-tolerant by design, because the node that needs a bundle is
 often already broken:
 
 - If a collector command fails, it writes its stderr to `<file>.err` beside the
-  output file. The bundle is not stopped. Empty `.err` files are removed.
+  output file. The bundle is not stopped. The capture deletes empty `.err` files.
 - **An `.err` file does not by itself mean failure.** Several host commands write
   to stderr when they succeed. A bundle from a healthy capture therefore
   routinely contains large `.err` files:
@@ -351,13 +351,13 @@ often already broken:
 - A Job **fails only when no destination received the tarball**. A partial
   collection is a success.
 - `backoffLimit: 0` means that a failed Job is not retried. Read
-  `kubectl -n cluster-support logs job/<job-name>`, correct the cause, and create
+  `kubectl -n cluster-support logs job/<job-name>`, fix the cause, and create
   the Job again for that node.
 
 ## Concurrency
 
 The loop in step 2 starts one privileged Job on each matched node at the same
-time. This is intended for a small number of nodes. On a large cluster, it
+time. We intend this for a small number of nodes. On a large cluster, it
 starts a `mirantis/ucp support` run on every node at the same time. Capture in
 slices instead:
 

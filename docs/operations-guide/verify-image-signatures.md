@@ -6,7 +6,7 @@ images) signs every image that it pushes with cosign. These images are the
 pushes them to the dev registry (`registry.ci.mirantis.com/bootc-mke3-dev`)
 and the prod registry (`registry.mirantis.com/bootc-mke3`). Each registry has
 its own key pair. This runbook describes how to verify that signature. You can
-do this check at any of three points in the lifecycle of an image in this
+do this at any of three points in the lifecycle of an image in this
 repository:
 
 - **Mirroring** it into your own internal or air-gapped registry. See the
@@ -55,7 +55,7 @@ the [Releases page](https://github.com/Mirantis/bootc-mke3/releases)).
 If a signature does not match, a signature is missing, or a key does not
 match, `cosign verify` exits with a non-zero code and prints a diagnostic.
 Treat this as a hard failure. Do not mirror, pull, install from, or switch to
-that image. Check the exit code. A non-zero exit code is the failure signal.
+that image. Read the exit code. A non-zero exit code is the failure signal.
 Warning text on stdout is not the failure signal.
 
 ## At mirroring time
@@ -66,8 +66,8 @@ verify it against the source registry (`registry.mirantis.com` or
 `registry.ci.mirantis.com/bootc-mke3-dev`). Use the command above.
 Mirroring tools that copy by digest (for example `skopeo copy`) copy the image
 manifest. They do not necessarily copy the cosign signature, because
-signatures are stored as separate OCI artifacts next to the image. Therefore
-verify against the source before you copy. After the copy, verify again
+signatures are separate OCI artifacts that the registry stores next to the
+image. Therefore verify against the source before you copy. After the copy, verify again
 against the destination if you do not know that your mirroring tool copies
 signature artifacts too.
 
@@ -98,7 +98,7 @@ The [Verify](#verify) command above covers the images that `bootc-mirantis`
 pushes itself: `rocky-9-base` and the versioned `bootc-mke3` product image, in
 both the dev and prod registries.
 
-The controllers are built and signed by their own repositories, not by
+Their own repositories build and sign the controllers, not
 `bootc-mirantis`:
 
 | Component | Signed? | Notes |
@@ -106,7 +106,7 @@ The controllers are built and signed by their own repositories, not by
 | `cluster-upgrade-controller` | Yes | The release workflow of the repository signs production images and the Helm chart with cosign (PRODENG-3686, Done 2026-08-25). |
 | `machine-config-controller` | Yes | Same as above (PRODENG-3686). |
 
-The signing key of the controllers is configured in their own CI, not in
+Their own CI configures the signing key of the controllers, not
 `bootc-mirantis`. Do not assume that the `bootc-mke3` prod public key verifies
 them. Ask PRODENG which public key applies before you rely on a verification
 result.
@@ -115,7 +115,7 @@ result.
 
 Separately from signatures, each production release on
 [`Mirantis/bootc-mke3` Releases](https://github.com/Mirantis/bootc-mke3/releases)
-has the SBOM and CVE-scan reports that were made when `bootc-mirantis` built
+has the SBOM and CVE-scan reports that `bootc-mirantis` made when it built
 the images (PRODENG-3712). There are six files for each platform, named
 `<platform>-<image>-<report>`. `<platform>` is `bare` or `cloud`. `<image>` is
 `base` (`rocky-9-base`) or `mke3` (the `bootc-mke3` product image):
@@ -134,9 +134,9 @@ How to read the reports:
   do not show anything below HIGH. An empty report does not mean that the image
   has no known CVEs. For the full result, use the SBOM with your own scanner.
 - **They are a snapshot from build time.** Nothing scans again after the
-  release. The reports do not show CVEs that are published later. Scan the SBOM
+  release. The reports do not show CVEs that someone publishes later. Scan the SBOM
   again periodically.
-- **Do not add the `base` and `mke3` counts together.** `bootc-mke3` is built
+- **Do not add the `base` and `mke3` counts together.** `bootc-mke3` builds
   `FROM` the base image, so the findings of the base layer are in both reports.
   When you count, deduplicate on `(Target, VulnerabilityID, PkgName)`.
 - **The scope is the two OCI images.** This pipeline does not scan controller
@@ -163,4 +163,4 @@ jq -r '[.Results[]? | .Target as $t | (.Vulnerabilities // [])[]
 Keys rotate independently for each environment (dev/prod). This repository
 does not get a notification when a key rotates. Always ask PRODENG for the
 *current* key. Do not reuse a key that you got before. Verify again if you
-suspect that a rotation occurred since your last check.
+suspect that a rotation occurred since you last verified.

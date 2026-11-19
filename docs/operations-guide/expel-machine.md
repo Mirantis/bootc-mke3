@@ -7,8 +7,8 @@ from Swarm. MKE removes the Kubernetes node object itself.
 This page also covers **forced expel** of a machine that is already
 unreachable, where there is nothing left to drain.
 
-Every step is an API call from an MKE client bundle. No SSH to any machine is
-necessary. Nothing is installed in the cluster for this.
+You do every step as an API call with an MKE client bundle. You do not need SSH
+to any machine. This procedure installs nothing in the cluster.
 
 ## Security
 
@@ -28,7 +28,7 @@ This gives **zero** fault tolerance.
 1. `kubectl` and `docker` configured from an MKE client bundle. See
    [Access the cluster](access-cluster.md).
 2. An MKE administrator identity.
-3. The name of the machine. One string is used for both layers, because the
+3. The name of the machine. Use one string for both layers, because the
    Swarm `HOSTNAME` of a machine is the same as its Kubernetes node name.
 4. A decision about what happens to the machine afterwards: terminate it, or
    reset it by hand. See [After removal](#after-removal-the-machine-is-orphaned).
@@ -44,8 +44,8 @@ Cluster API calls through the load balancer can fail intermittently while the
 load balancer still has the machine in rotation. `--availability active`
 restores it.
 
-To prevent this, demote the manager first. A *worker* that is set to `drain`
-stays `Ready` and only stops accepting tasks. The safe sequence is therefore:
+To prevent this, demote the manager first. A *worker* that you set to `drain`
+stays `Ready`. The only change is that it accepts no new tasks. The safe sequence is therefore:
 **demote, then cordon, then drain, then remove**.
 
 ### 1. Identify the machine and check what it is running
@@ -78,8 +78,8 @@ docker node update --availability drain <machine-name>
 ```
 
 `kubectl cordon` sets `.spec.unschedulable` and adds the
-`node.kubernetes.io/unschedulable` taint. The Swarm command stops new tasks
-and shuts down the tasks that are already there. Confirm the result:
+`node.kubernetes.io/unschedulable` taint. The Swarm command blocks new tasks
+and shuts down the tasks that are already there. Check the result:
 
 ```sh
 kubectl get node <machine-name> -o jsonpath='{.spec.unschedulable}{"\n"}'
@@ -95,7 +95,7 @@ machine is still a manager. Go back to step 2.
 kubectl drain <machine-name> --ignore-daemonsets --delete-emptydir-data --timeout=180s
 ```
 
-`--ignore-daemonsets` is mandatory. DaemonSet pods are recreated on the node
+`--ignore-daemonsets` is mandatory. Kubernetes recreates DaemonSet pods on the node
 immediately, and `drain` refuses to proceed without this flag.
 `--delete-emptydir-data` is necessary for any pod that has an `emptyDir`
 volume.
@@ -138,10 +138,10 @@ You do **not** need `kubectl delete node`.
 - `docker node ls` and `kubectl get nodes` both omit the machine, and
   `docker info` reports the reduced counts.
 - The remaining machines are `Ready` at both layers, with one Swarm `Leader`.
-- Workloads that were evicted are `Running` on the remaining machines. This
-  was observed for the System Upgrade Controller and node-feature-discovery
+- Workloads that Kubernetes evicted are `Running` on the remaining machines. We
+  observed this for the System Upgrade Controller and node-feature-discovery
   deployments after an expel.
-- The manager count is odd, or a replacement promotion is planned.
+- The manager count is odd, or you plan a replacement promotion.
 
 ## Forced expel of an unreachable machine
 
@@ -166,15 +166,15 @@ There are two differences from the live path:
   evict from an unreachable kubelet. Expect it to report failures. The goal
   is to free the workload names, not to shut anything down gracefully.
 
-> This path is documented from the observed preconditions of the live path
-> and the Swarm removal semantics. It has not been tested against a
+> This path comes from the observed preconditions of the live path
+> and the Swarm removal semantics. We did not test it against a
 > genuinely dead machine on a test cluster. On a three-manager cluster, such
-> a test costs the Raft quorum that is needed to issue the removal.
+> a test costs the Raft quorum that you need to issue the removal.
 
 ## After removal: the machine is orphaned
 
 The machine keeps running, and its engine still holds the Swarm state that it
-had before removal. This was verified after a forced removal: the instance
+had before removal. We verified this after a forced removal: the instance
 was still up, while the cluster no longer listed it at either layer.
 
 Nothing in the cluster can reach it any more. On a hardened image with SSH
@@ -226,7 +226,7 @@ you drain it again.
 
 ### Can I expel several machines at once?
 
-Expel the machines one at a time, and confirm cluster health between each.
+Expel the machines one at a time, and check cluster health between each.
 The commands work on one machine at a time. The risk with a batch is quorum:
 each manager removal changes the fault tolerance of the group that the next
 removal depends on.

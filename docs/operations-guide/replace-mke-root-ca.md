@@ -44,7 +44,7 @@ automated by the standalone `mke-custom-ca-playbook.yml`.
    > this certificate is exactly what is on disk at
    > `/var/lib/docker/volumes/ucp-etcd-root-ca/_data/cert.pem`. Use
    > `swarm-ca`, not the documented value, until Mirantis corrects the
-   > documentation or the CLI. A future release may correct the check. Verify
+   > documentation or the CLI. A future release may correct the check. Check
    > the behavior again with your own MKE patch version before you use this
    > row.
 
@@ -64,7 +64,7 @@ automated by the standalone `mke-custom-ca-playbook.yml`.
    ansible-playbook -i <path-to-your-inventory> mke-backup-playbook.yml
    ```
 
-   The playbook writes root-only (`0600`) archives on every manager to `mke_backup_dir` (default `/var/lib/mke-ansible-backup`, set in `vars/common-vars.yml`): `mke-<MKE version>-backup-<timestamp>.tar` and `swarm-<engine version>-backup-<timestamp>.tar.tgz`. The directory is persistent, so the archives stay after the manager reboots in step 3. The playbook never deletes them, and they stay on the disk of the manager until you delete them. They hold the MKE CA private keys. Delete them after you verify the new CAs and when you no longer need them.
+   The playbook writes root-only (`0600`) archives on every manager to `mke_backup_dir` (default `/var/lib/mke-ansible-backup`, set in `vars/common-vars.yml`): `mke-<MKE version>-backup-<timestamp>.tar` and `swarm-<engine version>-backup-<timestamp>.tar.tgz`. The directory is persistent, so the archives stay after the manager reboots in step 3. The playbook never deletes them, and they stay on the disk of the manager until you delete them. They hold the MKE CA private keys. Delete them after you check the new CAs and when you no longer need them.
 
    If you skip the backup, set `mke_custom_ca_force_recent_backup: true` in
    step 2. If you do not, the `ca` command refuses to run.
@@ -92,7 +92,7 @@ automated by the standalone `mke-custom-ca-playbook.yml`.
    The playbook does these steps in this order:
    1. It stages the supplied cert/key on the lead manager. It runs
       `mke ca --cluster`/`--etcd`/`--client` for each enabled CA type
-      (`tasks/mke-custom-ca-tasks.yml`). Then it removes the staged copy.
+      (`tasks/mke-custom-ca-tasks.yml`). Then it deletes the staged copy.
    2. It detects the current Swarm Raft leader among the managers
       (`docker node inspect --format '{{.ManagerStatus.Leader}}'`). It does
       not assume the leader, because leadership can move from the node that

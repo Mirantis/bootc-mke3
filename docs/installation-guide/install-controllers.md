@@ -18,8 +18,8 @@ result. It does not describe how to use the controllers day to day. For
 2. Cluster access as described in the [access runbook](../operations-guide/access-cluster.md).
    All commands below use the kubeconfig of the MKE client bundle. SSH to
    the cluster machines is not necessary.
-3. `kubectl` on your workstation. `helm` is not necessary, because both
-   controllers are installed from static, pre-rendered manifests.
+3. `kubectl` on your workstation. `helm` is not necessary, because the install
+   deploys both controllers from static, pre-rendered manifests.
 
 ## Procedure
 
@@ -28,7 +28,7 @@ result. It does not describe how to use the controllers day to day. For
 | Controller | Namespace | Purpose |
 |---|---|---|
 | System Upgrade Controller (SUC) | `system-upgrade` | Runs the per-node `Plan` jobs that `cluster-upgrade-controller` and `machine-config-controller` both drive. The install also patches it with a control-plane-only node affinity, a longer job active-deadline, and a privileged pod-security grant for its service account. |
-| `cluster-upgrade-controller` | `mke` | Reconciles `ClusterUpgrade` custom resources (whole-cluster OS and product upgrades). When `spec.product.mke3.controllersUpgrade.enabled` is set on that CR, it applies the manifests of all three controllers again from the newer image that the upgrade switched to. See [`mke3-controllers-upgrade`](../operations-guide/upgrade-with-controller.md#2-apply-the-clusterupgrade-cr). |
+| `cluster-upgrade-controller` | `mke` | Reconciles `ClusterUpgrade` custom resources (whole-cluster OS and product upgrades). When you set `spec.product.mke3.controllersUpgrade.enabled` on that CR, it applies the manifests of all three controllers again from the newer image that the upgrade switched to. See [`mke3-controllers-upgrade`](../operations-guide/upgrade-with-controller.md#2-apply-the-clusterupgrade-cr). |
 | `machine-config-controller` | `system-upgrade` (see note below) | Reconciles `MachineConfigChange` custom resources. See the [machine configuration runbook](../operations-guide/machine-config-operations.md). |
 
 The manifest of `machine-config-controller` renders most resources into
@@ -54,7 +54,7 @@ what that image build put in the image:
   Both are plain Kubernetes YAML. bootc-mirantis rendered them one time at
   image-build time with `helm template <chart> --namespace mke
   --include-crds`, and they include the CRDs. They are not live Helm
-  releases, and they are not templates that are evaluated at install time.
+  releases, and they are not templates that Ansible evaluates at install time.
 
 The defaults of the install automation in `vars/common-vars.yml` resolve
 the SUC manifests (`suc_crd_manifest_src`, `suc_controller_manifest_src`)
@@ -66,7 +66,7 @@ onto the Ansible controller before it applies the copy with
 `kubectl apply -f`. Ansible does not pin a separate version that can
 differ from the version that is actually cached on the nodes.
 
-Each manifest was rendered with `--include-crds`. Therefore `kubectl apply`
+bootc-mirantis rendered each manifest with `--include-crds`. Therefore `kubectl apply`
 keeps the CRDs of both controllers in sync with the manifest
 automatically on each run. A separate CRD-apply step is not necessary.
 The Helm caveat does not apply. That caveat is that Helm never touches the
@@ -101,7 +101,7 @@ want.
 
 ### Verify controller pod images
 
-For each controller, make sure that the running pod image is exactly the
+For each controller, verify that the running pod image is exactly the
 same as in `versions.txt`:
 
 ```sh
@@ -124,7 +124,7 @@ behavior of the newer image fails.
 - Each pod image from the verification step is exactly the same as in
   `versions.txt` on a cluster node.
 - The relevant CRDs are present (use `kubectl get crd` on your cluster to
-  confirm the exact spelling): `plans.upgrade.cattle.io` of SUC,
+  verify the exact spelling): `plans.upgrade.cattle.io` of SUC,
   `clusterupgrades.upgrade.mirantis.com` of `cluster-upgrade-controller`,
   and `machineconfigchanges.config.machine-config-controller.io` of
   `machine-config-controller`.
@@ -134,9 +134,9 @@ behavior of the newer image fails.
 | Symptom | Likely cause | Remediation |
 |---|---|---|
 | `kubectl apply` on a `MachineConfigChange` (or `ClusterUpgrade`) fails with `strict decoding error: unknown field ...` | The CRD in the applied manifest is older than the CR that you submit. You overrode `*_manifest` with a version that has an older CRD | Set the override to a manifest with a matching CRD, or remove the override to use the node-fetched default |
-| `spec.product.mke3.controllersUpgrade` of a `ClusterUpgrade` CR was applied **with no error**, but the `mke3-controllers-upgrade` step never runs | The CRD of the installed `cluster-upgrade-controller` is older than the field. The field first exists in `v0.1.9-tp1`/`v0.2.0` | Immediately after you apply, confirm with `kubectl get clusterupgrade <name> -o jsonpath='{.spec.product.mke3.controllersUpgrade.enabled}'`. Empty output means that the field was not accepted. Upgrade `cluster-upgrade-controller` first. Or, after the upgrade, apply all four baked controller manifests by hand, with `cluster-upgrade-controller` last and with `--namespace mke` (see [upgrade runbook](../operations-guide/upgrade-with-controller.md#2-apply-the-clusterupgrade-cr)) |
-| The pod image of a controller is different from `versions.txt` | The manifest source was overridden with a URL or mirror whose rendered image tag is older than the image build | Remove the override (or set it to a manifest with the tag that you want), run again, and verify again |
-| `machine-config-controller` deployment not found in namespace `mke` | Its manifest sets `targetNamespace: system-upgrade` for the Deployment. Look there instead | This is not a fault. It is expected behavior |
+| You applied a `ClusterUpgrade` CR with `spec.product.mke3.controllersUpgrade` **with no error**, but the `mke3-controllers-upgrade` step never runs | The CRD of the installed `cluster-upgrade-controller` is older than the field. The field first exists in `v0.1.9-tp1`/`v0.2.0` | Immediately after you apply, verify with `kubectl get clusterupgrade <name> -o jsonpath='{.spec.product.mke3.controllersUpgrade.enabled}'`. Empty output means that the CRD did not accept the field. Upgrade `cluster-upgrade-controller` first. Or, after the upgrade, apply all four baked controller manifests by hand, with `cluster-upgrade-controller` last and with `--namespace mke` (see [upgrade runbook](../operations-guide/upgrade-with-controller.md#2-apply-the-clusterupgrade-cr)) |
+| The pod image of a controller is different from `versions.txt` | You overrode the manifest source with a URL or mirror whose rendered image tag is older than the image build | Remove the override (or set it to a manifest with the tag that you want). Run again. Verify again |
+| `machine-config-controller` deployment not found in namespace `mke` | Its manifest sets `targetNamespace: system-upgrade` for the Deployment. Look there instead | This is not a fault. This is normal behavior |
 | A `ClusterUpgrade` step (for example `mke3-backup`) stays `Upgrading` on an air-gapped cluster. Its pod in `system-upgrade` is `ErrImagePull` / `ImagePullBackOff` when it pulls `registry.mirantis.com/cluster-upgrade-controller/...`, although the image is already on the nodes | `system-upgrade/default-controller-env` has `SYSTEM_UPGRADE_JOB_IMAGE_PULL_POLICY: Always` (in images built before 2026-10-29), so SUC creates each Job with `imagePullPolicy: Always` | Patch the ConfigMap to `IfNotPresent` and restart SUC. See [Older images: SUC Job pull policy](airgap-bootc-mke3.md#older-images-suc-job-pull-policy) |
 | Locked out of SSH and sudo on every node | `disable_sshd_after_install`/`revoke_sudo_after_install` ran during the install, before the controller installs (see [install runbook](install-bootc-mke3.md#post-install-automation)) | Do the break-glass recovery below |
 
@@ -166,8 +166,8 @@ of the node. You must do `unmask` first. The hardening play masks `sshd`
 (it links the unit to `/dev/null`), and `enable`/`start` on a masked unit
 fails. It is not sufficient to restore the wheel-group membership alone,
 because the default `%wheel` sudoers line of Rocky still prompts for a
-password. Therefore you must use the NOPASSWD drop-in above to get
-non-interactive sudo again. Do this procedure again for each locked-out
+password. Therefore you must use the NOPASSWD drop-in above to restore
+non-interactive sudo. Do this procedure again for each locked-out
 node.
 
 This procedure restores the access that a run with

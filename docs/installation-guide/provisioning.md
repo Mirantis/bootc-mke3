@@ -35,7 +35,7 @@ You can also use the [existing ansible playbook](../../ansible/reg-creds-playboo
 
 ### Ansible playbook setup
 
-The playbook reads credentials from `ansible/vars/reg-creds`, which is excluded from version control. Before you run the playbook, create the file from the provided template:
+The playbook reads credentials from `ansible/vars/reg-creds`, which Git ignores. Before you run the playbook, create the file from the provided template:
 
 ```bash
 cp ansible/vars/reg-creds.example ansible/vars/reg-creds
@@ -47,7 +47,7 @@ Then edit `ansible/vars/reg-creds` and replace `<username>` and `<password>` wit
 registry.mirantis.com <username> <password>
 ```
 
-Add one line for each registry. The file is gitignored, so Git never commits it.
+Add one line for each registry. Git ignores the file, so Git never commits it.
 
 ## Machines
 
@@ -74,8 +74,8 @@ both mechanisms, we recommend kickstart, unless you work specifically with
 a cloud build.
 
 It is best to make some configuration **before the machine first boots**. Extra
-kernel modules are the main example. A module that is declared in a
-kickstart payload is present from first boot, because `%post` writes into
+kernel modules are the main example. A module that a kickstart payload
+declares is present from first boot, because `%post` writes into
 the installed tree before the machine boots. A cloud-init payload is not
 equivalent. It runs after `systemd-modules-load.service`, so the module
 arrives on the second boot, unless the payload runs `modprobe` for it
@@ -88,9 +88,9 @@ can customise: the **Generic** ISO with your own kickstart file, or a
 cloud build with cloud-init user-data. The **Simple** ISO has its own
 embedded kickstart and has no such hook. On it, you can make these
 changes only after installation, on the running node. Where the module
-latch is involved, you must also reboot. See
+latch applies, you must also reboot. See
 [Image architecture](image-architecture.md) for what the image contains and
-which customisation points are supported.
+which customisation points Mirantis supports.
 
 ### Machine connection
 
@@ -104,7 +104,7 @@ All cluster machines must be in a valid network. For how to configure the networ
 
 ## Provisioning output (coupling to the installer/upgrader)
 
-When provisioning is complete and the machine cluster is ready, provisioning must produce an ansible inventory. The inventory defines how ansible connects to all of the machine nodes of the cluster. The input parameters of the Ansible tooling are described in the [Ansible inventory input document](ansible-inventory-input.md).
+When provisioning is complete and the machine cluster is ready, provisioning must produce an ansible inventory. The inventory defines how ansible connects to all of the machine nodes of the cluster. The [Ansible inventory input document](ansible-inventory-input.md) describes the input parameters of the Ansible tooling.
 
 ## Provisioning approach
 

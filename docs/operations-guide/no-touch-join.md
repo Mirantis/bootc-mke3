@@ -41,12 +41,12 @@ The resolver does these steps:
    1. **systemd credentials**: `swarm.token` and `swarm.manager`, imported
       with `ImportCredential=` (SMBIOS, kernel cmdline, or encrypted/TPM-bound
       credstore). This is the most secure option.
-   2. **tmpfs file**: `/run/mke3/swarm-join.env`. It is intended for
-      cloud-init (cloud-platform builds only). The file lives in RAM and does
+   2. **tmpfs file**: `/run/mke3/swarm-join.env`. It is for cloud-init
+      (cloud-platform builds only). The file lives in RAM and does
       not persist across reboot.
-   3. **persistent file**: `/etc/mke3/swarm-join.env`. It is intended for
-      kickstart-provisioned bare metal. It is shredded after a confirmed
-      join.
+   3. **persistent file**: `/etc/mke3/swarm-join.env`. It is for
+      kickstart-provisioned bare metal. The resolver shreds it after the
+      join succeeds.
 3. **Waits for Docker** to become healthy (up to 300 s by default).
 4. **Joins the swarm** with `docker swarm join --token <token>
    <SWARM_MANAGER>` (the value already contains the `host:2377` join
@@ -57,8 +57,9 @@ The resolver does these steps:
    regardless of the delivery path). It writes the sentinel and disables
    `swarm-join.service`.
 
-If **no credential is found**, the unit exits 0, does nothing, and stays
-enabled. If you inject a token later and reboot, the machine still joins. If
+If the resolver finds **no credential**, the unit exits 0, does nothing, and
+stays enabled. If you inject a token later and reboot, the machine still
+joins. If
 the join **fails**, the unit fails visibly (`systemctl status swarm-join`),
 stays enabled, and retries on the next boot.
 
@@ -66,7 +67,7 @@ After the machine is in the swarm, MKE onboards it automatically. The new
 worker appears in the MKE UI and in `docker node ls` without further action.
 Note: `docker node ls` can show a joined worker as `Down` indefinitely
 ("Node not yet found in classic node inventory", from `ucp-controller`). This
-is observed even though the node is `Ready` and schedulable in
+happens even though the node is `Ready` and schedulable in
 `kubectl get nodes`. Use `kubectl get nodes` as the authoritative check. Do
 not wait for `docker node ls` to catch up.
 
@@ -82,16 +83,16 @@ SWARM_MANAGER=<manager-host-or-ip>:2377
 `SWARM_MANAGER` must be the full `host:port` join address (port `2377`).
 The token must be a **worker** token (`docker swarm join-token -q worker` on
 a manager). The full `SWMTKN-1-<ca-hash>-<secret>` token contains the
-manager CA hash. The join therefore validates the TLS certificate of the
+manager CA hash. The join therefore checks the TLS certificate of the
 manager, and no extra pinning is necessary.
 
 ## Security properties
 
 - The token value is **never logged**. `journalctl -u swarm-join` shows only
   the manager endpoint and the source label.
-- The tmpfs path never touches the disk. The persistent path is shredded
-  after a confirmed join. The cloud-init user-data cache copies are also
-  scrubbed.
+- The tmpfs path never touches the disk. The resolver shreds the persistent
+  path after the join succeeds. It also scrubs the cloud-init user-data
+  cache copies.
 - The systemd-credential path supports encrypted and TPM-bound delivery.
 - The mechanism joins **workers only**. There is no manager-promotion path.
 - **Token lifecycle (SOP):** Issue a worker token for each **batch** of

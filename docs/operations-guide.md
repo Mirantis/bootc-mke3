@@ -18,13 +18,13 @@ Day-2 operations for a running `bootc-mke3` MKE 3 cluster: access the cluster, a
 ## Upgrades and migrations
 
 - [Upgrade bootc-mke3 (via the `ClusterUpgrade` CR)](operations-guide/upgrade-with-controller.md): the canonical upgrade path, which the controller drives.
-- [Upgrade bootc-mke3 via Ansible](operations-guide/upgrade-with-ansible.md): the manual exception path for when the controller is not available or is disabled.
+- [Upgrade bootc-mke3 via Ansible](operations-guide/upgrade-with-ansible.md): the manual exception path for when the controller is not available or you disable it.
 - [Roll back a bootc-mke3 upgrade](operations-guide/rollback-bootc-mke3.md): revert the OS, MCR, and MKE changes of a failed `ClusterUpgrade` with `spec.rollback.requested`.
 
 ## Security
 
 - [Security Analysis: Cluster Management Controllers](operations-guide/controller-security-analysis.md): the trust model and risk register for `cluster-upgrade-controller` and `machine-config-controller`.
-- [Verify bootc-mke3 image signatures](operations-guide/verify-image-signatures.md): `cosign verify` at mirroring, pull, and install/switch time. Which controllers are signed. How to read the SBOM/CVE reports attached to releases.
+- [Verify bootc-mke3 image signatures](operations-guide/verify-image-signatures.md): `cosign verify` at mirroring, pull, and install/switch time. Which controllers have signatures. How to read the SBOM/CVE reports attached to releases.
 - [Harden MKE3 / Kubernetes](operations-guide/harden-mke3-kubernetes.md): the steps to configure a secure baseline.
 - [Replace MKE root CA material](operations-guide/replace-mke-root-ca.md): use your own Cluster, etcd, and Client root CA at any time after installation.
 

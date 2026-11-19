@@ -1,7 +1,7 @@
 # Access the cluster (kubectl and Docker Swarm)
 
-This runbook shows how to get command-line access to a running `bootc-mke3`
-MKE 3 cluster. It covers the Kubernetes API (`kubectl`) and the Docker Swarm
+This runbook shows how to connect to a running `bootc-mke3`
+MKE 3 cluster from the command line. It covers the Kubernetes API (`kubectl`) and the Docker Swarm
 socket (`docker`). Use the **MKE client bundle**. Several other runbooks, for
 example the [mixed cluster runbook](mixed-cluster.md), list this access as a
 prerequisite.
@@ -14,8 +14,8 @@ authenticates and authorizes access as the MKE user that downloaded the bundle.
 ## Requirements
 
 1. A running MKE 3 cluster and its URL (`mke_url` in the ansible inventory).
-2. MKE user credentials. Admin credentials are configured at install time in
-   `ansible/vars/mke-creds.yml` or passed with `-e admin_user=... -e admin_pass=...`
+2. MKE user credentials. You set admin credentials at install time in
+   `ansible/vars/mke-creds.yml`, or you pass them with `-e admin_user=... -e admin_pass=...`
    (there is no default). See the
    [installation runbook](../installation-guide/install-bootc-mke3.md).
 3. On your workstation: `kubectl` or the `docker` CLI, or both. For the API
@@ -26,8 +26,8 @@ authenticates and authorizes access as the MKE user that downloaded the bundle.
 ### Option 1 — Fetch the bundle with the provided Ansible playbook
 
 If you still have the Ansible inventory that you used to install the cluster,
-this playbook automates option 2 above (retries, correct headers, cleanup). It
-is the same path that other playbooks in this repository use internally
+this playbook automates option 2 below (retries, correct headers, cleanup).
+Other playbooks in this repository use the same path internally
 (`cluster-upgrade-controller`/`machine-config-controller` install tasks):
 
 ```sh

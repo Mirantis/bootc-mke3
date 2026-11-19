@@ -20,10 +20,10 @@ request. You do not need SSH.
 
 The controller never starts a rollback automatically. Even when you set the
 flag in advance, the rollback starts only after the upgrade reaches `Failed`.
-If a mutating action (`bootc rollback`, `mirantis/ucp restore`) is tried again
-on a cluster that is already degraded, it can make the original failure worse.
-Therefore the decision to roll back is always explicit, and it is recorded on
-the CR.
+If you try a mutating action (`bootc rollback`, `mirantis/ucp restore`) again
+on a cluster that is already degraded, the action can make the original
+failure worse. Therefore the decision to roll back is always explicit, and
+the CR records it.
 
 ## Prerequisites
 
@@ -43,9 +43,9 @@ the CR.
 | `bootc-os` (OS + MCR, baked into one image) | Yes | `bootc rollback` through a SUC Plan, restricted to exactly the nodes that this attempt switched. Workers first, then control-plane, which is the reverse of the forward order. |
 | `mke3-upgrade` | Yes | `mirantis/ucp restore` with the `mke3-backup` tar from earlier in the same attempt. |
 | `mke3-backup`, `mke3-verify-environment` | N/A | These steps do not change the cluster. There is nothing to undo. |
-| `mke3-docker-config` | Yes | `mke3-docker-config-rollback` runs `revert-docker-config.sh` through a SUC Plan. The script restores the existing `/etc/docker/daemon.json` of each configured node from the `daemon.json.bak` backup (or removes the file if none existed before). It is restricted to exactly the nodes that the forward Plan changed. Workers first, then control-plane, in the same order as the `bootc-os` rollback. |
-| `machine-config-controller`-managed changes (`MachineConfigChange`: DNS/NTP/kernel/etc.) | **No** | This is a separate controller, and the `ClusterUpgrade` rollback does not change it. Revert manually only, from the `<file>.mcc-orig` backup on each node. See [R8](controller-security-analysis.md#5-consolidated-risk-register). |
-| `mke3-controllers-upgrade` (SUC / `machine-config-controller` / `cluster-upgrade-controller` manifests, when `controllersUpgrade.enabled` was set) | **No** | Recorded as condition `MKE3ControllersUpgradedRollbackUnsupported`. `ClusterUpgrade` does not revert it. A revert of an applied CRD/RBAC/Deployment is not meaningfully safer than leaving the forward apply in place. This step also replaces `cluster-upgrade-controller` itself, which is the process that would have to do the undo. Revert manually only, if truly needed. To do this, apply the manifests of the previous version by hand. |
+| `mke3-docker-config` | Yes | `mke3-docker-config-rollback` runs `revert-docker-config.sh` through a SUC Plan. The script restores the existing `/etc/docker/daemon.json` of each configured node from the `daemon.json.bak` backup (or removes the file if none existed before). It affects only the nodes that the forward Plan changed. Workers first, then control-plane, in the same order as the `bootc-os` rollback. |
+| `machine-config-controller`-managed changes (`MachineConfigChange`: DNS, NTP, kernel, and other host settings) | **No** | This is a separate controller, and the `ClusterUpgrade` rollback does not change it. Revert manually only, from the `<file>.mcc-orig` backup on each node. See [R8](controller-security-analysis.md#5-consolidated-risk-register). |
+| `mke3-controllers-upgrade` (SUC / `machine-config-controller` / `cluster-upgrade-controller` manifests, when you set `controllersUpgrade.enabled`) | **No** | The controller records condition `MKE3ControllersUpgradedRollbackUnsupported`. `ClusterUpgrade` does not revert it. A revert of an applied CRD/RBAC/Deployment is not meaningfully safer than leaving the forward apply in place. This step also replaces `cluster-upgrade-controller` itself, which is the process that would have to do the undo. Revert manually only, if truly needed. To do this, apply the manifests of the previous version by hand. |
 | CNI / CSI | N/A | Not a separate upgrade surface today. CNI is either baked into the bootc OS image (and reverted with it) or fully unmanaged, with no independent version or rollback path. |
 
 If your upgrade attempt changed anything in a "No" row above, the rollback is

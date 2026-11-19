@@ -6,12 +6,13 @@ structured cluster-wide reboots. Use the `MachineConfigChange` custom
 resource. See the
 [controllers runbook](../installation-guide/install-controllers.md) for
 these topics: what deploys this controller, the `mke`/`system-upgrade`
-namespace note, and how to verify its version. This runbook covers only
-the use of the controller after you confirm that it is healthy.
+namespace note, and how to check its version. This runbook covers only
+the use of the controller after you check that it is healthy.
 
 ## Requirements
 
-1. `machine-config-controller` is deployed and verified as described in the
+1. `machine-config-controller` runs in the cluster, and you checked it
+   as described in the
    [controllers runbook](../installation-guide/install-controllers.md).
 2. Cluster access as described in the [access runbook](access-cluster.md).
    You do not need SSH for any step below.
@@ -24,7 +25,7 @@ the use of the controller after you confirm that it is healthy.
 
    The manifest baked into a given image build can differ across builds.
    Therefore the exact `apiVersion` and `status` field names of its CRD
-   can also differ. Always confirm against the live CRD before you write a
+   can also differ. Always check against the live CRD before you write a
    `MachineConfigChange`.
    You can also find baked sample manifests for reference on any cluster
    node in
@@ -119,4 +120,4 @@ reconvergence section of the upstream runbook.
 |---|---|---|
 | `kubectl apply` fails `strict decoding error: unknown field "spec.reboot"` (or any other module) | The CRD of the cluster is older than the CR that you submit. The controller manifest is stale or overridden. | See the [controllers runbook troubleshooting](../installation-guide/install-controllers.md#troubleshooting). Re-apply a manifest whose CRD matches, or delete the `machine_config_controller_manifest` override to use the default that the node fetches. |
 | `Applied=False/Applying` stuck for a long time | A targeted node does not converge (the reboot never returned or the drain is stuck). | See the upstream [structured reboot runbook](https://github.com/Mirantis/machine-config-controller/blob/main/docs/structured-reboot.md#stuck-node-diagnosis-and-recovery). The same Plan/job inspection that it describes also applies to non-reboot modules. |
-| A `mcc-reboot` resource is still applied long after its rollout finished | The resource was not deleted after the rollout. | Delete the resource. A remaining reboot resource triggers one more time on any node that later joins the cluster. |
+| A `mcc-reboot` resource is still applied long after its rollout finished | No one deleted the resource after the rollout. | Delete the resource. A remaining reboot resource triggers one more time on any node that later joins the cluster. |

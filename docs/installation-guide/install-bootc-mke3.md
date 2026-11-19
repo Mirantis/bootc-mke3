@@ -4,13 +4,13 @@ Deploy an MKE cluster on the provisioned infrastructure with the Ansible install
 
 ## Requirements
 
-1. Ansible is installed on the machine from which you run the installation.
+1. You must install Ansible on the machine from which you run the installation.
 Ansible's control node cannot run natively on Windows. If your workstation is Windows, run `ansible-playbook` from WSL (Windows Subsystem for Linux).
 2. The ansible installer needs an ansible inventory for a cluster of machines. The machines must meet the minimum requirements for the Mirantis Containers components.
-3. `kubectl` is installed on the Ansible controller. The post-install play
+3. You must install `kubectl` on the Ansible controller. The post-install play
    (`mke-post-install-playbook.yml`, chained at the end of
    `mke-install-playbook.yml`) runs entirely with `hosts: localhost` against
-   the fetched MKE client-bundle kubeconfig. The SUC manifests,
+   the MKE client-bundle kubeconfig that the playbook downloaded. The SUC manifests,
    `cluster-upgrade-controller`, and `machine-config-controller` are all
    static Kubernetes manifests. A local `kubectl` applies them
    (`ansible/tasks/cluster-upgrade-controller-tasks.yml`,
@@ -23,7 +23,7 @@ Ansible's control node cannot run natively on Windows. If your workstation is Wi
 
 ### bootc-mke3 component configuration
 
-There are no default MKE admin credentials. `admin_user` and `admin_pass` are not defined in `ansible/vars/mke-creds.yml` on purpose. You must supply them before you install. The first play of `mke-install-playbook.yml` ("Validate MKE admin credentials") asserts that `admin_user` is defined and not empty. It also asserts that `admin_pass` is defined and has at least 8 characters. If an assertion fails, the run fails before the playbook changes any host. Both values can contain spaces, quotes and shell metacharacters. They are shell-quoted when they are passed to `mke install`.
+There are no default MKE admin credentials. `ansible/vars/mke-creds.yml` does not define `admin_user` and `admin_pass`, on purpose. You must supply them before you install. The first play of `mke-install-playbook.yml` ("Validate MKE admin credentials") asserts that you defined `admin_user` and that it is not empty. It also asserts that you defined `admin_pass` and that it has at least 8 characters. If an assertion fails, the run fails before the playbook changes any host. Both values can contain spaces, quotes and shell metacharacters. The playbook shell-quotes them when it passes them to `mke install`.
 
 Set them in one of two ways. You can uncomment and edit the two lines in `ansible/vars/mke-creds.yml`. Or you can set them on the command line, which keeps the password out of the working tree:
 
@@ -36,10 +36,10 @@ Do not commit real credentials. We recommend that you use `ansible-vault encrypt
 
 ## Procedure
 
-1. Make sure that the ansible inventory exists. For more details, see the [inventory description document](ansible-inventory-input.md).
+1. Check that the ansible inventory exists. For more details, see the [inventory description document](ansible-inventory-input.md).
 2. Set `admin_user` and `admin_pass` (required, see above) in `vars/mke-creds.yml` or with `-e`. To change other default values, specify the values in `vars/common-vars.yml`.
 3. Optional: Set the MCR and MKE licenses with the `mcr_license` and `mke_license` variables.
-4. Run ansible from the `ansible/` directory. Then `ansible.cfg` is used. It sets
+4. Run ansible from the `ansible/` directory. Then Ansible uses `ansible.cfg`. It sets
    `host_key_checking = false`, which is necessary for new hosts whose SSH host keys
    are not yet known:
    ```bash
@@ -52,14 +52,14 @@ Do not commit real credentials. We recommend that you use `ansible-vault encrypt
 
 ## Expected Results
 
-The Ansible playbook runs without error. To verify the installation, go to the MKE UI (`mke_url` in the ansible inventory file). Log in with the credentials specified in `vars/mke-creds.yml`.
+The Ansible playbook runs without error. To check the installation, go to the MKE UI (`mke_url` in the ansible inventory file). Log in with the credentials specified in `vars/mke-creds.yml`.
 
 ## Post-install automation
 
 A default run also deploys the System Upgrade Controller (SUC),
 `cluster-upgrade-controller`, and `machine-config-controller` to the
 cluster. See the [controllers runbook](install-controllers.md) for what
-each controller does, where its version comes from, and how to verify it.
+each controller does, where its version comes from, and how to check it.
 
 The same run also applies `disable_sshd_after_install` and
 `revoke_sudo_after_install` (`vars/common-vars.yml`). Both are `true` by
@@ -68,8 +68,8 @@ on cloud images, `cloud-init.service` starts a disabled `sshd` again on every
 boot with `Wants=sshd.service`. Only a mask stays in effect after a reboot.
 The run also revokes the sudo access of the ansible user on every host. This
 includes the wheel group, the sudo group, and any named
-`/etc/sudoers.d/<user>` drop-in. This is done in the "Harden hosts after MKE
-installation" play. That play runs *before* the post-install controller
+`/etc/sudoers.d/<user>` drop-in. The "Harden hosts after MKE
+installation" play does this. That play runs *before* the post-install controller
 installs (SUC, `cluster-upgrade-controller`, `machine-config-controller`) and
 not after them, although this section lists them in a different order. A
 default run of this runbook, with no changes, locks you out of SSH and sudo on
@@ -98,7 +98,7 @@ The "Authenticate to MKE and obtain a short-lived auth token" task
 (`ansible/tasks/mke-client-bundle-tasks.yml`) runs from the Ansible
 **controller** (`delegate_to: localhost`), not from a manager. The later MKE
 API calls also run from the controller.
-Status `-1` means that no HTTP response was received. If the controller is
+Status `-1` means that Ansible received no HTTP response. If the controller is
 behind a corporate proxy (`http_proxy`/`https_proxy` set in its environment),
 the Ansible `uri` module sends these requests through the proxy. The proxy
 usually cannot reach the MKE address, so the requests time out although the
@@ -113,11 +113,11 @@ export NO_PROXY="$no_proxy"
 cd ansible
 ansible-playbook -i <path-to-your-inventory> mke-install-playbook.yml
 ```
-To confirm the path without Ansible, use:
+To check the path without Ansible, use:
 `curl -vk --noproxy '*' -m 10 https://<mke_url>/_ping`.
 
-The login and download tasks use `no_log: true`. Thus the underlying
-error is censored, unless you temporarily set `no_log` to `false` while
+The login and download tasks use `no_log: true`. Thus Ansible censors the underlying
+error, unless you temporarily set `no_log` to `false` while
 you debug. Set it back afterwards, because the task arguments contain the admin
 password. To avoid a change to the playbook, repeat the call with `curl -v`
 from the controller.

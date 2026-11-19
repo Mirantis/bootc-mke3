@@ -9,7 +9,7 @@ This document analyzes the security posture of the two Kubernetes controllers th
 
 ## How to re-run this analysis
 
-The controllers are no longer vendored into this repository. To verify a claim in this document again, clone the two upstream repositories at (or near) the pinned commits above: `cluster-upgrade-controller` @ `8d37c8d` and `machine-config-controller` @ `6b2b670`. Then check the cited files and line ranges directly in those checkouts.
+The controllers are no longer vendored into this repository. To check a claim in this document again, clone the two upstream repositories at (or near) the pinned commits above: `cluster-upgrade-controller` @ `8d37c8d` and `machine-config-controller` @ `6b2b670`. Then check the cited files and line ranges directly in those checkouts.
 
 > [!IMPORTANT]
 > Both controllers depend on [Rancher's System Upgrade Controller (SUC)](https://github.com/rancher/system-upgrade-controller). SUC is *not* vendored here, and source review of SUC is out of scope. Its trust model is central to the security of both controllers. This document analyzes the trust model from the way the controllers invoke and configure SUC (`ansible/tasks/suc-priv-grant-tasks.yml`, `ansible/tasks/cluster-upgrade-controller-tasks.yml`).
@@ -49,11 +49,11 @@ Source: [`config/rbac/role.yaml#L1-L116`](https://github.com/Mirantis/cluster-up
 
 | API group | Resource | Verbs | Purpose |
 |---|---|---|---|
-| `` (core) | `namespaces` | get, list, watch | verify `system-upgrade` exists |
+| `` (core) | `namespaces` | get, list, watch | check that `system-upgrade` exists |
 | `` (core) | `nodes` | get, list, patch, watch | read node roles and patch `mke/version` label |
 | `coordination.k8s.io` | `leases` | full CRUD + watch | leader election |
 | `events.k8s.io` | `events` | create, patch | progress/failure events |
-| `helm.k0s.k0sproject.io` | `charts` | get, list, watch | verify MKE4 component rollout |
+| `helm.k0s.k0sproject.io` | `charts` | get, list, watch | check MKE4 component rollout |
 | `kcm.k0rdent.mirantis.com` | `managements` | get, patch, update | trigger k0rdent cluster template rollout |
 | `mke.mirantis.com` | `mkeconfigs` | get, list, patch, update, watch | patch MKE4 target version |
 | `mke.mirantis.com` | `mkereleases` | create, get, list, patch, update, watch | manage MKE4 release CRs |
@@ -79,7 +79,7 @@ The `plans` grant is the key entry. It is how a low-privilege controller pod cau
 | `mke3-backup` | `docker run mirantis/ucp:<current> backup` → tar to host path | `spec.product.mke3.backupDir` (pattern-validated: `^/[A-Za-z0-9._/-]*$`) |
 | `etcd-maintenance` | runs `/upgrade-etcd-maint.sh` from an OCI artifact on control-plane nodes | `spec.product.mke4.etcdMaintenance{Image,ArtifactRef}` |
 | `mke`/`k0rdent` | patches `MkeRelease`/`Management` CRs. No direct node script | version strings only |
-| `mke3-controllers-upgrade` (`spec.product.mke3.controllersUpgrade`) | **Not a SUC Plan** — a plain `batch/v1` Job running the controller's own image as `/manager apply-manifests`, Server-Side-Applying `system-upgrade-controller-crd.yaml`, `system-upgrade-controller.yaml`, `machine-config-controller-manifest.yaml`, `cluster-upgrade-controller-manifest.yaml` from a node hostPath (`cluster-upgrade-controller/internal/manifestapply/apply.go`) with `Force: true` and `FieldManager: cluster-upgrade-controller` | Only a bool (`enabled`) and an admission-pattern-validated path (`manifestsDir`). The manifests it applies are baked image content, not spec-supplied. The controllable surface here is "whether this runs," not "what it applies" |
+| `mke3-controllers-upgrade` (`spec.product.mke3.controllersUpgrade`) | **Not a SUC Plan** — a plain `batch/v1` Job running the controller's own image as `/manager apply-manifests`, Server-Side-Applying `system-upgrade-controller-crd.yaml`, `system-upgrade-controller.yaml`, `machine-config-controller-manifest.yaml`, `cluster-upgrade-controller-manifest.yaml` from a node hostPath (`cluster-upgrade-controller/internal/manifestapply/apply.go`) with `Force: true` and `FieldManager: cluster-upgrade-controller` | Only a bool (`enabled`) and an admission-pattern-validated path (`manifestsDir`). The manifests that it applies are content that the image already contains, not content that the spec supplies. The controllable surface here is "whether this runs," not "what it applies" |
 
 The blast radius of `mke3-controllers-upgrade` is qualitatively different from every
 other row. The reason is not that it is the only step that touches the
@@ -99,8 +99,8 @@ out-of-band. See the callout on `controllersUpgrade.enabled` in the
 ### 2.4 Secrets, network, logging
 
 - The controller does not read application secrets directly. It uses only its in-cluster ServiceAccount token.
-- `dockerDaemonConfig` can contain registry credentials that the user embeds. It is stored as plain CRD spec text (not a `Secret`). Anyone with `get` on `ClusterUpgrade` objects can read it. It appears in etcd unencrypted unless [encryption at rest](harden-mke3-kubernetes.md#7-enable-etcd-encryption-at-rest) is enabled.
-- Metrics (`:8080/metrics`) and health (`:8081/healthz`,`/readyz`) are plain HTTP and **unauthenticated**. By default they are available only on ClusterIP (`cmd/main.go:29-53`, `chart/cluster-upgrade-controller/templates/deployment.yaml:35-53`). There is no admission webhook server.
+- `dockerDaemonConfig` can contain registry credentials that the user embeds. The controller stores it as plain CRD spec text (not a `Secret`). Anyone with `get` on `ClusterUpgrade` objects can read it. It appears in etcd unencrypted unless you enable [encryption at rest](harden-mke3-kubernetes.md#7-enable-etcd-encryption-at-rest).
+- Metrics (`:8080/metrics`) and health (`:8081/healthz`,`/readyz`) are plain HTTP and **require no authentication**. By default they are available only on ClusterIP (`cmd/main.go:29-53`, `chart/cluster-upgrade-controller/templates/deployment.yaml:35-53`). There is no admission webhook server.
 - By default, logging uses `zap` in development mode (`cmd/main.go:39-40`). It is verbose, but it is not a security issue in itself. We recommend `Development: false` in production to prevent stack traces from leaking.
 
 ## 3. machine-config-controller
@@ -120,22 +120,22 @@ Source: kubebuilder markers in `internal/controller/machineconfigchange_controll
 | Namespaced | `upgrade.cattle.io` | `plans` | get, list, watch, create, update, patch, delete |
 | Namespaced | `coordination.k8s.io` | `leases` | full CRUD (leader election) |
 
-The escalation shape is the same as in `cluster-upgrade-controller`. The controller cannot touch a node itself, but its `plans` grant lets it cause SUC to schedule a privileged Job on each matching node. The `secrets` grant (including `delete`) is limited to the target namespace, which is reasonably tight. But that namespace is also the namespace where SUC runs privileged Jobs. Namespace-level access control is therefore important (see §5).
+The escalation shape is the same as in `cluster-upgrade-controller`. The controller cannot touch a node itself, but its `plans` grant lets it cause SUC to schedule a privileged Job on each matching node. The `secrets` grant (including `delete`) applies only to the target namespace, which is reasonably tight. But that namespace is also the namespace where SUC runs privileged Jobs. Namespace-level access control is therefore important (see §5).
 
 ### 3.2 Pod/container hardening (already in place)
 
 - Controller: `runAsNonRoot: true`, `seccompProfile: RuntimeDefault`, `allowPrivilegeEscalation: false`, `capabilities.drop: [ALL]` — `charts/machine-config-controller/machine-config-controller/values.yaml:43-51`. The base image is `distroless/static:nonroot`, UID 65532 — `Dockerfile:10-13`.
-- A **second image**, `Dockerfile.agent` (Alpine 3.20, digest-pinned), runs only inside SUC Job Pods. It runs as root, with the packages (`bash`, `jq`, `util-linux`) that the host-mutation scripts need. This is expected, because it is the privileged half of the design. But the "agent" image is a second supply-chain surface that runs as root. You must pin it and scan it in the same way as the controller image.
+- A **second image**, `Dockerfile.agent` (Alpine 3.20, digest-pinned), runs only inside SUC Job Pods. It runs as root, with the packages (`bash`, `jq`, `util-linux`) that the host-mutation scripts need. This is normal, because it is the privileged half of the design. But the "agent" image is a second supply-chain surface that runs as root. You must pin it and scan it in the same way as the controller image.
 
 ### 3.3 What the generated Plans actually do on nodes
 
-`apply.sh` (`internal/scripts/apply.sh:1-20`) dispatches every module from a per-CR `Secret` that is mounted into the Job. **No module has semantic allowlisting beyond syntax**:
+`apply.sh` (`internal/scripts/apply.sh:1-20`) dispatches every module from a per-CR `Secret` that the Job mounts. **No module has semantic allowlisting beyond syntax**:
 
 | Module | Script | Effect | CRD validation |
 |---|---|---|---|
 | `network` | `internal/scripts/network.sh:6-52` | Overwrites `/host/etc/resolv.conf` with attacker-supplied nameservers/search domains | none beyond string type |
 | `ntp` | `internal/scripts/ntp.sh:6-36` | Overwrites `/host/etc/systemd/timesyncd.conf` and runs `nsenter --target 1 … systemctl enable --now systemd-timesyncd` | none beyond string type |
-| `kernel` | `internal/scripts/kernel.sh:6-59` | Writes `/etc/sysctl.d/90-machine-config-controller.conf` and runs `nsenter --target 1 … sysctl --system` | CEL regex requires dotted key syntax (`^[a-zA-Z_][a-zA-Z0-9_]*([.][a-zA-Z0-9_-]+)+$`) and rejects control characters in values — **no allowlist of which sysctl keys are safe** (e.g. `kernel.core_pattern`, `kernel.modules_disabled`, `net.ipv4.ip_forward` are all settable) |
+| `kernel` | `internal/scripts/kernel.sh:6-59` | Writes `/etc/sysctl.d/90-machine-config-controller.conf` and runs `nsenter --target 1 … sysctl --system` | CEL regex requires dotted key syntax (`^[a-zA-Z_][a-zA-Z0-9_]*([.][a-zA-Z0-9_-]+)+$`) and rejects control characters in values. **No allowlist of which sysctl keys are safe**: for example, `kernel.core_pattern`, `kernel.modules_disabled`, `net.ipv4.ip_forward` are all settable |
 
 `apply.sh` also does not validate which top-level `config.json` keys map to which script. It runs any `<key>.sh` that is present. The blast radius is therefore limited only by the scripts that the agent image contains today.
 
@@ -144,7 +144,7 @@ Existing mitigation: before the controller creates the Plan, it checks that `spe
 ### 3.4 Secrets, network, logging
 
 - The controller writes the full rendered script bundle **and** `config.json` into a `Secret` for each CR (`internal/controller/machineconfigchange_controller.go:182-212`). It is plaintext at rest in etcd if encryption at rest is not enabled. Anyone with `get secrets` in the target namespace can read it.
-- The metrics (`:8080`) and health (`:8081`) endpoints are unauthenticated, as in cluster-upgrade-controller (`cmd/main.go:33-37`, `charts/.../templates/deployment.yaml:28-46`).
+- The metrics (`:8080`) and health (`:8081`) endpoints require no authentication, as in cluster-upgrade-controller (`cmd/main.go:33-37`, `charts/.../templates/deployment.yaml:28-46`).
 - There is no admission webhook. All validation uses only the CRD schema (CEL/regex).
 
 ## 4. Cluster-wide risk factors introduced at install time
@@ -155,7 +155,7 @@ The Ansible tooling in this repository grants wider privileges than the controll
 - The same task also sets **`enable_admin_ucp_scheduling = true`** for the whole cluster. This lets **all authenticated users and service accounts** (not only SUC) schedule pods on manager and MSR nodes. This is wider than SUC needs. It increases the blast radius for any other workload that an attacker schedules.
 - The task also grants the **`Scheduler` role to the `authenticated` alias** (all authenticated users) on the root Swarm collection. This is also wider than "let the SA of SUC schedule privileged jobs."
 
-These two grants are MKE-wide policy changes. They are not scoped to the SUC ServiceAccount. It is best to include them in the blast radius of this analysis, although they come from Ansible and not from the controllers.
+These two grants are MKE-wide policy changes. They are not scoped to the SUC ServiceAccount. We recommend that you include them in the blast radius of this analysis, although they come from Ansible and not from the controllers.
 
 ## 5. Consolidated risk register
 
@@ -165,8 +165,8 @@ These two grants are MKE-wide policy changes. They are not scoped to the SUC Ser
 | R2 | `create`/`update` on `Plan` objects in `system-upgrade` namespace bypasses the controllers entirely and achieves the same privileged execution | Both (SUC) | Full node compromise | Not restricted by default namespaced RBAC |
 | R3 | `enable_admin_ucp_scheduling=true` + `authenticated`→`Scheduler` grant let any authenticated principal schedule on manager/MSR nodes | Ansible/MKE | Privilege escalation beyond SUC's needs | Applied unconditionally when `deploy_suc: true` |
 | R4 | `mke3.image`, `upgradeFlags`, `dockerDaemonConfig` unvalidated beyond JSON/string-type | cluster-upgrade-controller | Arbitrary image execution / Docker daemon takeover with attacker-controlled `ClusterUpgrade` write access | No registry allowlist, no admission webhook |
-| R5 | Arbitrary `sysctl` keys, DNS resolvers, NTP servers with only syntax validation | machine-config-controller | Kernel hardening bypass (e.g. `kernel.core_pattern`), DNS hijack, time-based auth bypass | CEL regex on syntax only, no semantic allowlist |
-| R6 | Full script bundle + config stored as plaintext `Secret`/CRD spec | Both | Credential/config disclosure if etcd or `get secrets` access is obtained | No encryption at rest by default |
+| R5 | Arbitrary `sysctl` keys, DNS resolvers, NTP servers with only syntax validation | machine-config-controller | Kernel hardening bypass (for example `kernel.core_pattern`), DNS hijack, time-based auth bypass | CEL regex on syntax only, no semantic allowlist |
+| R6 | Full script bundle + config stored as plaintext `Secret`/CRD spec | Both | Credential/config disclosure if someone gains etcd or `get secrets` access | No encryption at rest by default |
 | R7 | Unauthenticated `:8080`/`:8081` metrics & health endpoints | Both | Info disclosure (controller-runtime metrics) and reconnaissance | No NetworkPolicy shipped by default |
 | R8 | No automatic rollback on `machine-config-controller` failure. Single manual `.mcc-orig` backup | machine-config-controller | Partial/failed config change may leave nodes in inconsistent state | Manual recovery only |
 | R9 | Agent image (`Dockerfile.agent`, Alpine, root) is a second supply-chain surface | machine-config-controller | Compromise of agent image = compromise of every node it runs on | Digest-pinned base, otherwise same trust level as controller image |
