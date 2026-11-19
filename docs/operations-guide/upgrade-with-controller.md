@@ -1,46 +1,50 @@
 # Upgrade bootc-mke3 (via the `ClusterUpgrade` CR)
 
-This is the **canonical** way to upgrade an existing `bootc-mke3` cluster:
-applying a kube-native `ClusterUpgrade` custom resource, handled by the
-`cluster-upgrade-controller` already installed on the cluster by default.
-No SSH and no Ansible inventory are required — only `kubectl` access via the
-[client bundle](access-cluster.md).
+This is the **canonical** way to upgrade an existing `bootc-mke3` cluster.
+Apply a kube-native `ClusterUpgrade` custom resource. The
+`cluster-upgrade-controller` that is installed on the cluster by default
+handles the resource. You do not need SSH or an Ansible inventory. You need
+only `kubectl` access through the [client bundle](access-cluster.md).
 
 > [!NOTE]
 > A manual, Ansible-driven exception path exists for clusters where
-> `cluster-upgrade-controller` is unavailable or disabled — see the
+> `cluster-upgrade-controller` is unavailable or disabled. See the
 > [Ansible upgrade runbook](upgrade-with-ansible.md). Both paths run the
-> identical underlying `mirantis/ucp upgrade` checks and commands.
+> same underlying `mirantis/ucp upgrade` checks and commands.
 
 ## Prerequisites
 
-1. `cluster-upgrade-controller` installed in the cluster — installed by
-   default as part of a standard [install](../installation-guide/install-bootc-mke3.md).
+1. `cluster-upgrade-controller` is installed in the cluster. A standard
+   [install](../installation-guide/install-bootc-mke3.md) installs it by
+   default.
 2. A [client bundle](access-cluster.md) with `kubectl` configured against the
-   cluster (`export KUBECONFIG=<bundle>/kube.yml`). No SSH to cluster
-   machines is required for this path.
-3. Workers must be reachable from the manager(s) on the full
-   `mke_worker_internal`/`mke_worker_self` port sets — see the [port
+   cluster (`export KUBECONFIG=<bundle>/kube.yml`). This path does not need
+   SSH to cluster machines.
+3. The manager(s) must be able to reach the workers on the full
+   `mke_worker_internal`/`mke_worker_self` port sets. See the [port
    requirements](join-machines-no-touch.md#port-requirements) table for the
-   complete list, which goes beyond the minimal ports required just for
-   [no-touch join](join-machines-no-touch.md). `mke3-verify-environment`
-   probes the full set from the control plane to every worker; if any are
-   blocked at the network layer (security group, firewall between subnets,
-   etc.) the step fails naming the blocked ports and node(s), even if the
-   workers' own OS firewall already allows them.
-4. Read access to the target bootc OS image and MKE upgrade image referenced
-   below (see [registry requirements](../installation-guide/provisioning.md#registry)).
+   complete list. The complete list has more ports than the minimum ports
+   for [no-touch join](join-machines-no-touch.md). `mke3-verify-environment`
+   probes the full set from the control plane to every worker. If the
+   network layer blocks any of the ports (for example a security group or a
+   firewall between subnets), the step fails. The failure names the blocked
+   ports and nodes. This is true even if the OS firewall of the workers
+   allows the ports.
+4. Read access to the target bootc OS image and the MKE upgrade image that
+   are referenced below (see
+   [registry requirements](../installation-guide/provisioning.md#registry)).
 
 ## Procedure
 
 ### 1. Confirm the cluster is ready to upgrade
 
-The controller drives every node unattended once the CR is applied, so a
-cluster that is already degraded, or that carries state from a previous
-upgrade, fails part-way through. Run these checks first; each one names what
-to do when it does not hold.
+After you apply the CR, the controller upgrades every node without
+supervision. A cluster that is already degraded, or that has state from a
+previous upgrade, fails part-way through. Do these checks first. Each check
+names the action to do when the check does not pass.
 
-**Kubernetes.** Every node `Ready`, with no pressure condition set:
+**Kubernetes.** Make sure that every node is `Ready` and that no pressure
+condition is set:
 
 ```sh
 kubectl get nodes
@@ -49,14 +53,14 @@ kubectl get nodes -o json | jq -r '.items[] | .metadata.name as $n
   | "\($n) \(.type)"'
 ```
 
-The second command prints nothing on a healthy cluster. Any `MemoryPressure`,
-`DiskPressure` or `PIDPressure` row names a node to clear before upgrading —
-the upgrade pulls images and writes a new OS deployment on every node, both
-of which need disk.
+The second command prints nothing on a healthy cluster. Each `MemoryPressure`,
+`DiskPressure` or `PIDPressure` row names a node that you must clear before
+you upgrade. The upgrade pulls images and writes a new OS deployment on every
+node, and both need disk space.
 
-No workload is stuck or failing. Phase alone is not enough — a pod whose
-container is in `CrashLoopBackOff`, or failing its readiness probe, stays in
-phase `Running` — so check both:
+Make sure that no workload is stuck or failing. The phase alone is not
+enough. A pod whose container is in `CrashLoopBackOff`, or fails its
+readiness probe, stays in phase `Running`. Therefore check both:
 
 ```sh
 kubectl get pods -A --field-selector=status.phase!=Running,status.phase!=Succeeded
@@ -65,15 +69,15 @@ kubectl get pods -A -o json | jq -r '.items[]
   | "\(.metadata.namespace)/\(.metadata.name)"'
 ```
 
-The first lists pods that never reached `Running`; the second lists running
-pods with a container that is not ready, which is where a crash-looping
-workload shows up. Investigate anything either prints. A pod already
-`Pending` for lack of capacity will not schedule any better while nodes are
-being drained in sequence.
+The first command lists pods that never reached `Running`. The second
+command lists running pods that have a container that is not ready. A
+crash-looping workload shows in the second list. Investigate each pod that
+either command prints. A pod that is already `Pending` because of a lack of
+capacity does not schedule more easily while the nodes drain in sequence.
 
-**Custom resource definitions.** Both CRDs the upgrade uses must be present
-and `Established`, and must serve the API versions the CR and the controller
-use:
+**Custom resource definitions.** Both CRDs that the upgrade uses must be
+present and `Established`. They must also serve the API versions that the CR
+and the controller use:
 
 ```sh
 kubectl get crd clusterupgrades.upgrade.mirantis.com plans.upgrade.cattle.io \
@@ -81,98 +85,102 @@ kubectl get crd clusterupgrades.upgrade.mirantis.com plans.upgrade.cattle.io \
 'NAME:.metadata.name,ESTABLISHED:.status.conditions[?(@.type=="Established")].status,SERVED:.spec.versions[?(@.served==true)].name'
 ```
 
-Both rows must read `True`, and `clusterupgrades.upgrade.mirantis.com` must
-list the `apiVersion` used by the CR in step 3 (`v1alpha1`) in its `SERVED`
-column. The column filters on `served: true` deliberately: a version present
-in the CRD but not served is rejected by the API server, so listing every
-version would pass this check and still fail at `kubectl apply`. A missing
-CRD means the relevant controller was never installed or was removed —
-`kubectl apply -f` of the CR would fail with `no matches for kind`.
-`Established=False` means the API server has not yet accepted the definition;
-re-check before proceeding.
+Both rows must read `True`. The `SERVED` column of
+`clusterupgrades.upgrade.mirantis.com` must list the `apiVersion` that the CR
+uses in step 3 (`v1alpha1`). The column filters on `served: true` on
+purpose. The API server rejects a version that is in the CRD but not served.
+If the command listed every version, it could pass this check and the
+`kubectl apply` could still fail. A missing CRD means that the relevant
+controller was never installed or was removed. In that case, `kubectl apply -f`
+of the CR fails with `no matches for kind`. `Established=False` means that
+the API server did not yet accept the definition. Check again before you
+continue.
 
-**cluster-upgrade-controller.** Deployment available:
+**cluster-upgrade-controller.** Make sure that the Deployment is available:
 
 ```sh
 kubectl -n mke get deploy cluster-upgrade-controller
 ```
 
-`READY` must read `1/1`. A `CrashLoopBackOff` or repeatedly restarting pod
-means the controller cannot reconcile the CR you are about to create;
-diagnose with `kubectl -n mke logs deploy/cluster-upgrade-controller` before
-going further.
+`READY` must read `1/1`. A `CrashLoopBackOff` or a pod that restarts again
+and again means that the controller cannot reconcile the CR that you are
+about to create. Before you continue, diagnose with
+`kubectl -n mke logs deploy/cluster-upgrade-controller`.
 
-No upgrade is already in flight or left behind:
+Make sure that no upgrade is in progress or left behind:
 
 ```sh
 kubectl get clusterupgrades
 ```
 
-Any CR in a non-terminal phase must reach a terminal one first:
-`Upgrading` and `RollingBack` are both actively mutating nodes. A CR left in
-`Failed` or `RollbackFailed` must be resolved before a new CR is created —
-see [Roll back a bootc-mke3 upgrade](rollback-bootc-mke3.md) for the phase
+Each CR in a non-terminal phase must reach a terminal phase first.
+`Upgrading` and `RollingBack` both actively change nodes. You must resolve a
+CR that is in `Failed` or `RollbackFailed` before you create a new CR. See
+[Roll back a bootc-mke3 upgrade](rollback-bootc-mke3.md) for the phase
 model (`Failed` → `RollingBack` → `RolledBack` or `RollbackFailed`) and for
-what `RollbackFailed` needs. `Completed` and `RolledBack` are terminal and do
-not block a new upgrade.
+the requirements of `RollbackFailed`. `Completed` and `RolledBack` are
+terminal and do not block a new upgrade.
 
-**system-upgrade-controller.** This is what executes the per-node work, so
-the upgrade cannot proceed without it:
+**system-upgrade-controller.** This controller runs the per-node work. The
+upgrade cannot continue without it:
 
 ```sh
 kubectl -n system-upgrade get deploy system-upgrade-controller
 kubectl -n system-upgrade get plans,jobs
 ```
 
-The deployment must read `1/1`. The second command should return `No
-resources found` on a cluster with no upgrade history: a leftover `Plan`
-re-fires against nodes that join later, and a `Job` still running or in
-error is a previous upgrade that never finished. SUC's own TTL
+The deployment must read `1/1`. We expect the second command to return
+`No resources found` on a cluster with no upgrade history. A remaining `Plan`
+runs again on nodes that join later. A `Job` that is still running or in
+error is a previous upgrade that did not finish. The TTL of SUC
 (`SYSTEM_UPGRADE_JOB_TTL_SECONDS_AFTER_FINISH`, 900s) removes completed
-jobs, so anything older is residue worth clearing.
+jobs. Therefore each older job is residue. It is best to clear it.
 
-Do not extend this to `pods`: the `system-upgrade` namespace also holds the
-`system-upgrade-controller` and `machine-config-controller` pods themselves,
-which are expected to be `Running` and are not upgrade residue.
+Do not extend this command to `pods`. The `system-upgrade` namespace also
+holds the `system-upgrade-controller` and `machine-config-controller` pods.
+These pods are expected to be `Running` and are not upgrade residue.
 
-**MKE and Swarm.** Expected machine count present and manager quorum intact:
+**MKE and Swarm.** Make sure that the expected number of machines is present
+and that the manager quorum is intact:
 
 ```sh
 kubectl get nodes -l node-role.kubernetes.io/master
 (cd <bundle-dir> && source env.sh && docker node ls)
 ```
 
-`docker node ls` needs the client bundle's Docker environment, not just
-`KUBECONFIG`: without `env.sh` sourced from inside the bundle directory it
-talks to whatever local Docker daemon is configured instead of the cluster.
+`docker node ls` needs the Docker environment of the client bundle, not only
+`KUBECONFIG`. If you do not source `env.sh` from inside the bundle directory,
+the command uses the local Docker daemon that is configured, not the cluster.
 
-Manager count must be odd and every manager reachable; upgrading with a
-manager already down leaves no quorum margin when the next one reboots.
-A worker that `docker node ls` reports `Down` while `kubectl get nodes` has
-it `Ready` needs `docker node inspect <node>` before it is dismissed: the
-known benign case is specifically the `"Node not yet found in classic node
-inventory"` message described in [no-touch
-join](join-machines-no-touch.md). Any other reason is a real problem to
-resolve first.
+The manager count must be odd and every manager must be reachable. If a
+manager is already down when you upgrade, no quorum margin remains when the
+next manager reboots. `docker node ls` can report a worker as `Down` while
+`kubectl get nodes` shows it as `Ready`. Run `docker node inspect <node>`
+before you dismiss it. The only known benign case is the `"Node not yet found
+in classic node inventory"` message that is described in [no-touch
+join](join-machines-no-touch.md). Any other reason is a real problem. Resolve
+it first.
 
 ### 2. Verify target image access
 
-Before applying the CR, confirm the target `mirantis/ucp:<version>` upgrade
-image and (if `spec.os.image` is set) the target bootc OS image are both
-pullable from wherever the cluster's nodes read images from — see
+Before you apply the CR, make sure that the target `mirantis/ucp:<version>`
+upgrade image can be pulled. If `spec.os.image` is set, make sure that the
+target bootc OS image can also be pulled. The pull must work from the
+location where the nodes of the cluster read images. See
 [registry requirements](../installation-guide/provisioning.md#registry).
-`cluster-upgrade-controller` reuses its own image to run the `mke3-upgrade`
-step; there is no separate `spec.product.mke3.image` field to configure.
+`cluster-upgrade-controller` uses its own image to run the `mke3-upgrade`
+step. There is no separate `spec.product.mke3.image` field to configure.
 
-On an air-gapped cluster, also confirm that
+On an air-gapped cluster, also make sure that
 `SYSTEM_UPGRADE_JOB_IMAGE_PULL_POLICY` in `system-upgrade/default-controller-env`
-is not `Always`. Images built before 2026-10-29 ship it as `Always`, which
-makes SUC create every step's Job with `imagePullPolicy: Always` and sends the
-kubelet to the registry even for images already on the node — see
+is not `Always`. Images that were built before 2026-10-29 set it to
+`Always`. With this value, SUC creates the Job of every step with
+`imagePullPolicy: Always`. The kubelet then goes to the registry, even for
+images that are already on the node. See
 [Older images: SUC Job pull policy](../installation-guide/airgap-bootc-mke3.md#older-images-suc-job-pull-policy).
 
-If `spec.os.image` is set, verify its cosign signature before applying the
-CR — see
+If `spec.os.image` is set, verify its cosign signature before you apply the
+CR. See
 [Verify bootc-mke3 image signatures](verify-image-signatures.md#at-installswitch-time).
 
 ### 3. Apply the `ClusterUpgrade` CR
@@ -198,84 +206,89 @@ spec:
   workerConcurrency: <N>
 ```
 
-- `spec.os` is optional — omit it to upgrade the MKE product only, leaving
-  the OS/MCR version unchanged.
-- `backupDir` is optional — the CRD defaults it to `/var/lib/mke-backup`.
-- `controlPlaneConcurrency` and `workerConcurrency` bound how many nodes of
-  each role the controller drives through the upgrade steps at once. Manager
-  nodes are always upgraded serially before workers start; workers proceed in
-  batches of `workerConcurrency`.
-- `controllersUpgrade.enabled` gates a sixth, final step —
-  `mke3-controllers-upgrade` — that re-applies the System Upgrade Controller,
-  `machine-config-controller`, and `cluster-upgrade-controller` manifests
-  baked into the target OS image. **The CRD defaults this to `false`, by
-  design**: the step replaces cluster-wide CRDs, RBAC and Deployments,
-  including `cluster-upgrade-controller`'s own, so it is opt-in per upgrade
-  rather than something a CR acquires implicitly.
+- `spec.os` is optional. To upgrade only the MKE product and keep the
+  OS/MCR version the same, omit it.
+- `backupDir` is optional. The CRD sets the default to `/var/lib/mke-backup`.
+- `controlPlaneConcurrency` and `workerConcurrency` set the maximum number
+  of nodes of each role that the controller drives through the upgrade steps
+  at the same time. The controller always upgrades the manager nodes one
+  after the other before the workers start. The workers proceed in batches
+  of `workerConcurrency`.
+- `controllersUpgrade.enabled` controls a sixth, final step,
+  `mke3-controllers-upgrade`. This step applies again the System Upgrade
+  Controller, `machine-config-controller`, and `cluster-upgrade-controller`
+  manifests that are baked into the target OS image. **The CRD sets the
+  default to `false`, by design.** The step replaces cluster-wide CRDs, RBAC
+  and Deployments, including those of `cluster-upgrade-controller` itself.
+  Therefore you must opt in for each upgrade. A CR does not get this step
+  implicitly.
 
   > [!NOTE]
-  > **With the field unset, the controllers are not upgraded and nothing
+  > **If the field is unset, the controllers are not upgraded and nothing
   > records that.** `.status.phase` reaches `Completed`, no condition is
-  > set, and no log line reports the step being skipped — the absence of
-  > `MKE3ControllersUpgraded` in `.status.conditions` is the only signal.
+  > set, and no log line reports that the step was skipped. The only signal
+  > is that `MKE3ControllersUpgraded` is absent from `.status.conditions`.
   > The target OS image stages newer SUC/`machine-config-controller`/
   > `cluster-upgrade-controller` manifests on disk
-  > (`/usr/share/mke-controllers/manifests`); with the field unset none of
-  > them are applied, and the cluster keeps running the versions it was
-  > *installed* with across any number of later OS or product upgrades
+  > (`/usr/share/mke-controllers/manifests`). If the field is unset, none of
+  > the manifests are applied. The cluster keeps the versions that it was
+  > *installed* with, across any number of later OS or product upgrades,
   > until an upgrade sets the field.
   >
-  > **Set it to `true`** when you want the platform controllers to track the
-  > OS image — which is the normal case for a cluster whose controllers were
-  > installed from these images and are not managed elsewhere. **Leave it
-  > unset or `false`** when you manage any of the three out-of-band (a
-  > separate Helm release, for example), when you need the product upgrade
-  > and the controller upgrade to land in separate change windows, or when
-  > you want to keep a known-good controller version across a product bump.
+  > **Set the field to `true`** when you want the platform controllers to
+  > follow the OS image. This is the normal case for a cluster whose
+  > controllers were installed from these images and are not managed
+  > elsewhere. **Leave the field unset or `false`** in these cases:
   >
-  > The field requires `cluster-upgrade-controller` `v0.1.9-tp1`/`v0.2.0` or
-  > later — it does not exist in earlier CRDs. Confirm it was accepted
-  > immediately after applying, rather than after waiting out the whole
+  > - You manage any of the three controllers out-of-band (for example with
+  >   a separate Helm release).
+  > - You need the product upgrade and the controller upgrade in separate
+  >   change windows.
+  > - You want to keep a known-good controller version across a product
+  >   upgrade.
+  >
+  > The field needs `cluster-upgrade-controller` `v0.1.9-tp1`/`v0.2.0` or
+  > later. It does not exist in earlier CRDs. Immediately after you apply
+  > the CR, confirm that the CR was accepted. Do not wait for the complete
   > upgrade:
   > ```sh
   > kubectl get clusterupgrade <name> \
   >   -o jsonpath='{.spec.product.mke3.controllersUpgrade.enabled}'   # must print: true
   > ```
-  > If it prints nothing, the pre-upgrade `cluster-upgrade-controller` is too
-  > old for this field. Upgrade the three controllers by hand after the
-  > product upgrade instead, using the manifests the new OS image staged on
-  > each node.
+  > If the command prints nothing, the `cluster-upgrade-controller` before
+  > the upgrade is too old for this field. In that case, upgrade the three
+  > controllers by hand after the product upgrade. Use the manifests that
+  > the new OS image staged on each node.
   >
-  > These manifests live at `/usr/share/mke-controllers/manifests` **on the
-  > nodes**, not on your workstation, and `kubectl apply -f` reads the
-  > client's filesystem — pointing it at that path fails with a
-  > missing-path error. Copy them off a node first. This needs no SSH
-  > (managers revoke it after install) because `kubectl debug node` runs a
-  > pod with the host filesystem mounted at `/host`; `--attach=true` is
-  > required or the command returns no output.
+  > These manifests are at `/usr/share/mke-controllers/manifests` **on the
+  > nodes**, not on your workstation. `kubectl apply -f` reads the file
+  > system of the client. If you point it at that path, it fails with a
+  > missing-path error. First copy the manifests from a node. This does not
+  > need SSH (managers revoke SSH after install). `kubectl debug node` runs
+  > a pod with the host file system mounted at `/host`. You must set
+  > `--attach=true`. Without it, the command returns no output.
   >
-  > **Prerequisite.** `DEBUG_IMAGE` has no default and must be set
-  > explicitly: the image must already be present on the node, or
-  > pullable by that cluster, *before* this procedure starts, and must
-  > contain both a shell and `chroot`. A distroless image has neither and
-  > will not work. On a cluster with public registry access `busybox` is
-  > sufficient, and is what CI uses. **On an air-gapped cluster `busybox`
-  > will not pull**: the debug pod sits in `ImagePullBackOff` before any
-  > manifest is copied.
+  > **Prerequisite.** `DEBUG_IMAGE` has no default. You must set it
+  > explicitly. Before this procedure starts, the image must be on the node
+  > or the cluster must be able to pull it. The image must contain both a
+  > shell and `chroot`. A distroless image has neither and does not work. On
+  > a cluster with public registry access, `busybox` is sufficient. CI uses
+  > `busybox`. **On an air-gapped cluster, `busybox` cannot be pulled.** The
+  > debug pod stays in `ImagePullBackOff` before any manifest is copied.
   >
-  > On an air-gapped cluster, use `cluster-upgrade-controller`'s own image.
-  > It carries `/bin/sh` and `/usr/sbin/chroot`, and it is already pulled on
-  > the node that runs it — this procedure exists because that controller is
-  > running an older version than the one staged on disk, so its image is
-  > present there. That guarantee holds **on the controller's own node, not
-  > on every master**, so select the node from the controller's pod rather
-  > than taking the first master in the list; on a multi-manager cluster
-  > those are usually different nodes, and a master that has never run the
-  > controller may be unable to pull the image.
+  > On an air-gapped cluster, use the image of `cluster-upgrade-controller`
+  > itself. It has `/bin/sh` and `/usr/sbin/chroot`.
+  > The node that runs the controller already pulled it. This procedure
+  > exists because that controller runs an older version than the version
+  > that is staged on disk. Therefore its image is present on that node.
+  > This is true **on the node that runs the controller, not on every
+  > master**. Select the node from the pod of the controller. Do not take the
+  > first master in the list. On a multi-manager cluster these are usually
+  > different nodes. A master that never ran the controller can be unable to
+  > pull the image.
   >
-  > Read both the image ref and the node from the running Deployment, so
-  > neither a version nor a label is written here to go stale:
-  >
+  > Read both the image reference and the node from the running Deployment.
+  > Then this document does not hardcode a version or a label that can become outdated:
   > ```sh
   > cuc_debug_env() {
   >   local selector pod
@@ -300,46 +313,46 @@ spec:
   > fi
   > ```
   >
-  > The guards matter because the failure they prevent is silent rather than
-  > loud. An empty selector is not an error to `kubectl`: `-l ''` matches
-  > every pod, so an unrelated pod's node and image would be used and would
-  > pass every later check. Selecting a `Running` and `Ready` pod rather
-  > than the first one matters here specifically because this procedure runs
-  > *during* a controller upgrade — a rollout can be in flight, in which
-  > case the query returns the ready old pod and its pending replacement
-  > together, while `READY 1/1` still reads as expected.
+  > The guards are important because the failure that they prevent is silent
+  > and not loud. An empty selector is not an error for `kubectl`. `-l ''`
+  > matches every pod. Then the node and image of an unrelated pod are used
+  > and pass every later check. It is important to select a `Running` and
+  > `Ready` pod and not the first pod. This procedure runs *during* a
+  > controller upgrade. A rollout can be in progress. In that case, the
+  > query returns the ready old pod and its pending replacement together,
+  > and `READY 1/1` still reads as expected.
   >
-  > This is written as a function for one reason: it has to **stop**. A bare
-  > `: "${VAR:?message}"` guard prints its message and the shell carries on
-  > to the next pasted line, which is the dangerous one; `exit` stops it but
-  > closes the operator's session, which on an air-gapped host is a
-  > disproportionate result for a transient lookup failure. `return` inside
-  > a function does both — the remaining derivation is skipped and the shell
-  > survives. Both behaviours were confirmed by pasting this block into an
-  > interactive shell rather than reasoned about.
+  > The block is a function for one reason: it must **stop**. A bare
+  > `: "${VAR:?message}"` guard prints its message, and the shell continues
+  > to the next pasted line, which is the dangerous line. `exit` stops the
+  > block but closes the session of the operator. On an air-gapped host this
+  > is a disproportionate result for a transient lookup failure. `return`
+  > inside a function does both: it skips the remaining derivation and the
+  > shell stays open. We confirmed both behaviors by pasting this block into
+  > an interactive shell. We did not only reason about them.
   >
-  > `NODE` set here replaces the `kubectl get nodes … | head -1` selection
-  > used below; the debug pod must land on the node whose image availability
-  > was just established. The selector is read from the Deployment rather
-  > than hardcoded because the chart generates it from the release name —
-  > today it resolves to `app.kubernetes.io/name=cluster-upgrade-controller,
-  > app.kubernetes.io/instance=<release>`, which a renamed release changes.
+  > The `NODE` that is set here replaces the `kubectl get nodes … | head -1`
+  > selection that is used below. The debug pod must start on the node whose
+  > image availability was just established. The block reads the selector
+  > from the Deployment and does not hardcode it, because the chart generates
+  > the selector from the release name. Today it resolves to
+  > `app.kubernetes.io/name=cluster-upgrade-controller,
+  > app.kubernetes.io/instance=<release>`. A renamed release changes it.
   >
-  > Read it from the cluster rather than from the node's `versions.txt`:
-  > that file is on the node, and reaching the node is what the debug pod
-  > is for.
+  > Read the image from the cluster and not from `versions.txt` of the node.
+  > That file is on the node, and the debug pod exists to reach the node.
   >
-  > `mirantis/ucp` also carries both and is a sound second choice.
-  > **Two preloaded images do not work and both look as if they should:**
-  > `rancher/kubectl` contains only the `kubectl` binary and two `/etc`
-  > files — no shell — so `chroot` fails in a way that resembles a
-  > permissions or path error rather than a missing binary; and
-  > `machine-config-controller` has a large filesystem but no shell and no
-  > `chroot`, while the `machine-config-controller/agent` image beside it
-  > has both.
+  > `mirantis/ucp` also has both and is a sound second choice.
+  > **Two preloaded images do not work, although both look as if they
+  > should:** `rancher/kubectl` contains only the `kubectl` binary and two
+  > `/etc` files. It has no shell, so `chroot` fails in a way that looks like
+  > a permissions or path error and not like a missing binary.
+  > `machine-config-controller` has a large file system but no shell and no
+  > `chroot`. The `machine-config-controller/agent` image next to it has
+  > both.
   >
   > The namespace must permit a privileged pod with a host mount. The run
-  > this procedure is derived from used `-n default` with the MKE admin
+  > from which this procedure is derived used `-n default` with the MKE admin
   > client bundle.
   > ```sh
   > cuc_copy_manifests() {
@@ -369,18 +382,18 @@ spec:
   >   echo "manifests not copied; do not apply" >&2
   > fi
   > ```
-  > Each file is written through `mktemp` and renamed only after the copy
-  > succeeds and produces a non-empty result. Redirecting straight onto
-  > `${m}.yaml` truncates it the moment the shell opens it — before
-  > `kubectl` runs, let alone fails — so a failed retry would otherwise
-  > destroy manifests a previous successful run had copied.
+  > The command writes each file through `mktemp` and renames it only after
+  > the copy succeeds and produces a non-empty result. A redirect directly
+  > onto `${m}.yaml` truncates the file when the shell opens it. This
+  > happens before `kubectl` runs, and before `kubectl` can fail. A failed
+  > retry then destroys the manifests that a previous successful run copied.
   >
-  > Then apply all four — applying only the SUC pair leaves
-  > `machine-config-controller` and `cluster-upgrade-controller` on their old
-  > versions, including an outdated `ClusterUpgrade` CRD. The
-  > `cluster-upgrade-controller` manifest sets no `metadata.namespace`, so it
-  > needs `--namespace` explicitly or it lands in `default` (compare
-  > `ansible/tasks/cluster-upgrade-controller-tasks.yml`):
+  > Then apply all four manifests. If you apply only the SUC pair,
+  > `machine-config-controller` and `cluster-upgrade-controller` stay on their
+  > old versions, including an outdated `ClusterUpgrade` CRD. The
+  > `cluster-upgrade-controller` manifest sets no `metadata.namespace`.
+  > Therefore it needs `--namespace` explicitly. Otherwise it goes to
+  > `default` (compare `ansible/tasks/cluster-upgrade-controller-tasks.yml`):
   > ```sh
   > cuc_apply_manifests() {
   >   [ "${CUC_MANIFESTS_FRESH:-}" = 1 ] || {
@@ -392,21 +405,21 @@ spec:
   > }
   > cuc_apply_manifests
   > ```
-  > The apply step refuses unless the copy above completed in this shell.
-  > Files left over from an earlier attempt are indistinguishable from fresh
-  > ones on disk, and applying a stale manifest is worse than applying none.
-  > Applying `cluster-upgrade-controller`'s own manifest replaces the
-  > controller performing the upgrade; do it last, as the step itself does.
+  > The apply step refuses to run unless the copy above completed in this
+  > shell. Files that remain from an earlier attempt look the same as fresh
+  > files on disk. An apply of a stale manifest is worse than no apply.
+  > The apply of the manifest of `cluster-upgrade-controller` replaces the
+  > controller that does the upgrade. Do it last, as the step itself does.
 
-  This step runs **last**, after `mke3-upgrade` — every node has already
-  booted the target image by then, including the final act of the chain:
-  `cluster-upgrade-controller` replacing its own CRD/Deployment/RBAC via a
-  plain Kubernetes Job (deliberately not a SUC Plan, to avoid SUC watching
-  the very Job that replaces SUC's own CRD out from under it). It has **no
-  rollback counterpart** — a failure here is recorded as condition
-  `MKE3ControllersUpgradedRollbackUnsupported` rather than reverted; see
+  This step runs **last**, after `mke3-upgrade`. By then, every node has
+  booted the target image. The final action of the chain is that
+  `cluster-upgrade-controller` replaces its own CRD/Deployment/RBAC with a
+  plain Kubernetes Job. This is not a SUC Plan on purpose. A SUC Plan would
+  make SUC watch the Job that replaces the CRD of SUC. The step has **no
+  rollback counterpart**. A failure in this step is recorded as condition
+  `MKE3ControllersUpgradedRollbackUnsupported` and is not reverted. See
   [Roll back a bootc-mke3 upgrade](rollback-bootc-mke3.md).
-- Apply with `kubectl apply -f <file>.yaml`.
+- To apply the CR, run `kubectl apply -f <file>.yaml`.
 
 ### 4. Monitor progress
 
@@ -422,21 +435,22 @@ kubectl get plans.upgrade.cattle.io -n system-upgrade
 kubectl get pods -n system-upgrade
 ```
 
-`.status.phase` moves through `Upgrading` (with `.status.activeStep` naming
-the current step, e.g. `mke3-backup`, `bootc-os`, `mke3-verify-environment`,
-`mke3-upgrade`, `mke3-controllers-upgrade`) to a terminal `Completed` or
-`Failed`. `mke3-controllers-upgrade` only appears when
-`controllersUpgrade.enabled` was set.
+`.status.phase` moves through `Upgrading` to a terminal `Completed` or
+`Failed`. `.status.activeStep` names the current step during `Upgrading`
+(for example `mke3-backup`, `bootc-os`, `mke3-verify-environment`,
+`mke3-upgrade`, `mke3-controllers-upgrade`).
+`mke3-controllers-upgrade` appears only if `controllersUpgrade.enabled` was
+set.
 
 ## Expected Results
 
 - `.status.phase` reaches `Completed`.
 - `kubectl get nodes` shows every node `Ready`.
-- The MKE UI/API and `docker version` report the target product version; if
-  an OS image was specified, `bootc status` on each node shows it as booted.
+- The MKE UI/API and `docker version` report the target product version. If
+  you specified an OS image, `bootc status` on each node shows it as booted.
 - **If `controllersUpgrade.enabled` was set**: `.status.conditions` includes
-  `MKE3ControllersUpgraded: "True"`, and the running images match what the
-  node now carries at `/usr/share/mke-controllers/versions.txt`:
+  `MKE3ControllersUpgraded: "True"`. The running images match the images
+  that the node now has in `/usr/share/mke-controllers/versions.txt`:
   ```sh
   kubectl -n system-upgrade get deploy system-upgrade-controller \
     -o jsonpath='{.spec.template.spec.containers[0].image}'
@@ -445,16 +459,16 @@ the current step, e.g. `mke3-backup`, `bootc-os`, `mke3-verify-environment`,
   kubectl -n mke get deploy cluster-upgrade-controller \
     -o jsonpath='{.spec.template.spec.containers[0].image}'
   ```
-  `.status.phase: Completed` alone does not prove any of this — with the
-  field unset there is no such condition and the Deployments are simply
-  untouched, and `Completed` is reached either way.
+  `.status.phase: Completed` alone does not prove this. If the field is
+  unset, there is no such condition and the Deployments are not changed.
+  `Completed` is reached in both cases.
 
 ## System Upgrade Controller v0.14.0 → v0.20.2
 
-Images that pin System Upgrade Controller (SUC) v0.20.2 cannot have that
-manifest applied over a cluster still running v0.14.0 by a
-`cluster-upgrade-controller` older than the fix described below. The
-`mke3-controllers-upgrade` step fails and the whole `ClusterUpgrade`
+Images that pin System Upgrade Controller (SUC) v0.20.2 cannot apply that
+manifest over a cluster that still runs v0.14.0. This is true if the
+`cluster-upgrade-controller` is older than the fix that is described below.
+The `mke3-controllers-upgrade` step fails and the whole `ClusterUpgrade`
 reaches `Failed`:
 
 ```
@@ -465,25 +479,27 @@ spec.strategy.rollingUpdate: Forbidden: may not be specified
 when strategy `type` is 'Recreate'
 ```
 
-Cause: the v0.14.0 manifest sets no `spec.strategy`, so the API server
-defaults the live Deployment to `RollingUpdate` with a populated
-`rollingUpdate` block. The v0.20.2 manifest sets `type: Recreate` and no
-`rollingUpdate` key. Server-Side Apply changes the type but cannot remove
-the defaulted block, which is owned by whichever client applied v0.14.0,
-so the merged object is rejected. Fresh installs of v0.20.2 are
-unaffected — there is no pre-existing Deployment to merge against.
+Cause: the v0.14.0 manifest sets no `spec.strategy`. The API server
+therefore sets the live Deployment to `RollingUpdate` by default, with a
+populated `rollingUpdate` block. The v0.20.2 manifest sets `type: Recreate`
+and no `rollingUpdate` key. Server-Side Apply changes the type but cannot
+remove the block that was set by default. The client that applied v0.14.0
+owns that block. Therefore the API server rejects the merged object. Fresh
+installs of v0.20.2 are not affected, because there is no existing
+Deployment to merge against.
 
-**Upgrade order.** Upgrade to a release carrying the fixed
-`cluster-upgrade-controller` *before* upgrading to a release that pins SUC
+**Upgrade order.** Upgrade to a release that has the fixed
+`cluster-upgrade-controller` *before* you upgrade to a release that pins SUC
 v0.20.2. The `mke3-controllers-upgrade` Job runs the
-`cluster-upgrade-controller` image already running on the cluster, not the
-one staged in the target image, so a cluster that jumps straight to the
-SUC v0.20.2 release performs the apply with the old controller and hits
-the failure above. Shipping both in one image does not avoid it.
+`cluster-upgrade-controller` image that already runs on the cluster. It does
+not run the image that is staged in the target image. A cluster that goes
+directly to the SUC v0.20.2 release does the apply with the old controller
+and has the failure above. A single image that contains both does not
+prevent the failure.
 
-**Recovery for a cluster that hit the failure.** Set the strategy type and
-remove the orphaned field in a *single* patch, then re-apply the
-`ClusterUpgrade`:
+**Recovery for a cluster that had the failure.** In a *single* patch, set
+the strategy type and remove the orphaned field. Then apply the
+`ClusterUpgrade` again:
 
 ```sh
 kubectl patch deploy -n system-upgrade system-upgrade-controller --type=json \
@@ -491,16 +507,17 @@ kubectl patch deploy -n system-upgrade system-upgrade-controller --type=json \
        {"op":"replace","path":"/spec/strategy/type","value":"Recreate"}]'
 ```
 
-Both operations are required, and in one patch. Removing `rollingUpdate`
-while leaving `type: RollingUpdate` does not help: `rollingUpdate` is
-defaulted whenever the type is `RollingUpdate`, so the API server
-repopulates the block — which is how it came to exist in the first place,
-from v0.14.0's strategy-less manifest — and the next apply fails
-identically. A JSON patch applies as a unit, so the object never passes
-through that state. Setting `type: Recreate` leaves nothing to default,
-because `rollingUpdate` is only defaulted for `RollingUpdate`.
+Both operations are necessary, and they must be in one patch. If you remove
+`rollingUpdate` but leave `type: RollingUpdate`, the problem remains. The
+API server sets `rollingUpdate` by default whenever the type is
+`RollingUpdate`. Therefore the API server fills the block again. This is how
+the block came to exist in the first place, from the manifest of v0.14.0
+that has no strategy. The next apply fails in the same way. A JSON patch
+applies as a unit, so the object never has that state. If you set
+`type: Recreate`, nothing remains to set by default, because the API server
+sets `rollingUpdate` by default only for `RollingUpdate`.
 
-Confirm the result before re-applying anything:
+Before you apply anything again, confirm the result:
 
 ```sh
 # must print: Recreate
@@ -512,43 +529,48 @@ kubectl -n system-upgrade get deploy system-upgrade-controller \
   -o jsonpath='{.spec.strategy.rollingUpdate}'
 ```
 
-Both checks matter, and the second is the one that catches the failure
-state: `type: Recreate` with a surviving `rollingUpdate` block is exactly
-the combination the API server rejects. Each selects a scalar or an absent
-field rather than the whole `strategy` object, because how `jsonpath`
-renders a map has varied between `kubectl` versions.
+Both checks are important. The second check catches the failure state:
+`type: Recreate` with a remaining `rollingUpdate` block is the exact
+combination that the API server rejects. Each check selects a scalar or an
+absent field and not the whole `strategy` object, because the way that
+`jsonpath` shows a map differs between `kubectl` versions.
 
-`kubectl apply` is not a workaround on its own: client-side apply also
-retains the defaulted field.
+`kubectl apply` is not a workaround by itself. Client-side apply also keeps
+the field that was set by default.
 
-This recovery procedure has **not been exercised on a live cluster**. The
-upgrade path itself has — see the verification recorded on PRODENG-3820 —
-but that run used a controller already carrying the fix and never needed
-this patch.
+This recovery procedure has **not been tested on a live cluster**. The
+upgrade path itself ran on a live cluster (see the verification that is recorded
+on PRODENG-3820). That run used a controller that already had the fix and
+did not need this patch.
 
-The only evidence for the patch itself is client-side: applying it with
-`kubectl patch --local` to a Deployment in the pre-patch state
-(`type: RollingUpdate` with `maxSurge`/`maxUnavailable` 25%) yields
-`type: Recreate` with no `rollingUpdate` key. That proves the patch
-document transforms the object as intended. It does **not** prove an API
-server accepts the result, does not exercise server-side defaulting, and
-does not prove the subsequent `ClusterUpgrade` re-apply succeeds.
+The only evidence for the patch itself is client-side. When you apply it
+with `kubectl patch --local` to a Deployment in the pre-patch state
+(`type: RollingUpdate` with `maxSurge`/`maxUnavailable` 25%), the result is
+`type: Recreate` with no `rollingUpdate` key. This proves that the patch
+document changes the object as intended. It does **not** prove that an API
+server accepts the result. It does not test server-side defaulting. It does
+not prove that the subsequent `ClusterUpgrade` apply succeeds.
 
 ## Rollback
 
-If `.status.phase` reaches `Failed` instead, the same CR can revert the
-steps it already applied — OS, MCR, and MKE together — via
+If `.status.phase` reaches `Failed`, the same CR can revert the steps that
+it already applied (OS, MCR, and MKE together) with
 `spec.rollback.requested`. See
 [Roll back a bootc-mke3 upgrade](rollback-bootc-mke3.md) for the
-prerequisites, the per-step undo table (what is and isn't reverted), and
+prerequisites, the per-step undo table (what is and is not reverted), and
 the procedure.
 
 ## Where this is documented upstream
 
-Full step-by-step behavior of each upgrade step (`mke3-docker-config`,
-`mke3-backup`, `bootc-os`, `mke3-verify-environment`, `mke3-upgrade`,
-`mke3-controllers-upgrade`), additional
-scenarios (product-only upgrade, Docker daemon config distribution), and the
-`cluster-upgrade-controller` install procedure itself live in the
+The upstream repository documents these topics:
+
+- The full step-by-step behavior of each upgrade step (`mke3-docker-config`,
+  `mke3-backup`, `bootc-os`, `mke3-verify-environment`, `mke3-upgrade`,
+  `mke3-controllers-upgrade`).
+- Additional scenarios (product-only upgrade, Docker daemon config
+  distribution).
+- The `cluster-upgrade-controller` install procedure itself.
+
+See the documentation in the
 [`cluster-upgrade-controller`](https://github.com/Mirantis/cluster-upgrade-controller)
-repository's own docs — this runbook intentionally does not duplicate them.
+repository itself. This runbook intentionally does not duplicate it.

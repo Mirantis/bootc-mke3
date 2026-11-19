@@ -1,39 +1,42 @@
 # Machine configuration changes (machine-config-controller)
 
-Apply host-level configuration — DNS, NTP, kernel sysctls/modules, and
-structured cluster-wide reboots — via the baked-in `machine-config-controller`,
-using the `MachineConfigChange` custom resource. See the
-[controllers runbook](../installation-guide/install-controllers.md) for what deploys this
-controller, the `mke`/`system-upgrade` namespace note, and how to verify its
-version; this runbook only covers using it once it's confirmed healthy.
+Use the baked-in `machine-config-controller` to apply host-level
+configuration. This includes DNS, NTP, kernel sysctls/modules, and
+structured cluster-wide reboots. Use the `MachineConfigChange` custom
+resource. See the
+[controllers runbook](../installation-guide/install-controllers.md) for
+these topics: what deploys this controller, the `mke`/`system-upgrade`
+namespace note, and how to verify its version. This runbook covers only
+the use of the controller after you confirm that it is healthy.
 
 ## Requirements
 
-1. `machine-config-controller` deployed and verified per the
+1. `machine-config-controller` is deployed and verified as described in the
    [controllers runbook](../installation-guide/install-controllers.md).
-2. Cluster access per the [access runbook](access-cluster.md) — no SSH is
-   needed for anything below.
-3. The CRD's actual schema, read from the cluster you're operating on, not
-   from this doc or an old sample:
-
+2. Cluster access as described in the [access runbook](access-cluster.md).
+   You do not need SSH for any step below.
+3. The actual CRD schema. Read the schema from the cluster that you
+   operate on. Do not read it from this document or from an old sample:
    ```sh
    kubectl get crd -o name | grep machineconfigchanges
    kubectl get crd <the name above> -o yaml
    ```
 
-   The manifest baked into a given image build (and therefore its CRD's exact
-   `apiVersion` and `status` field names) can differ across builds — always
-   confirm against the live CRD before writing a `MachineConfigChange`.
-   Baked sample manifests for reference are also on any cluster node under
+   The manifest baked into a given image build can differ across builds.
+   Therefore the exact `apiVersion` and `status` field names of its CRD
+   can also differ. Always confirm against the live CRD before you write a
+   `MachineConfigChange`.
+   You can also find baked sample manifests for reference on any cluster
+   node in
    `/usr/share/mke-controllers/manifests/machine-config-controller-samples/`.
 
 ## Procedure
 
 ### Non-reboot changes: network, ntp, kernel
 
-These `spec` areas can be combined freely in a single `MachineConfigChange`
-and are safely re-appliable — changing the values and re-applying
-reconfigures the node, this is not a one-shot apply:
+You can combine these `spec` areas in a single `MachineConfigChange`.
+You can safely apply them again. To reconfigure the node, change the
+values and apply again. The apply is not a one-time action:
 
 ```yaml
 apiVersion: <from the installed CRD, see Requirements>
@@ -55,7 +58,8 @@ spec:
     drain: true
 ```
 
-Apply it, then watch the resource's `Applied` condition reach `True`:
+Apply the resource. Then watch the `Applied` condition of the resource
+until it is `True`:
 
 ```sh
 kubectl apply -f mcc-example.yaml
@@ -64,21 +68,22 @@ kubectl get machineconfigchange mcc-example -o jsonpath='{.status.conditions}'
 
 ### Reboot: always a dedicated resource
 
-The same CRD's `reboot` module drives a structured, cluster-wide rolling
-reboot — but with two hard rules that are load-bearing enough to repeat
-here. For the full operational picture (quorum-safe splitting across roles,
-stuck-node diagnosis and recovery, and reconvergence behavior for nodes that
-join later), see the machine-config-controller project's own
+The `reboot` module of the same CRD does a structured, cluster-wide rolling
+reboot. Two hard rules apply, and they are important enough to repeat
+here. For the full operational information, see the
 [structured reboot runbook](https://github.com/Mirantis/machine-config-controller/blob/main/docs/structured-reboot.md)
-— it is not duplicated here:
+of the machine-config-controller project. It covers quorum-safe splitting
+across roles, diagnosis and recovery of stuck nodes, and reconvergence
+behavior for nodes that join later. This document does not duplicate that
+information.
 
 - `reboot` must be the **only** module in its `MachineConfigChange`. Never
-  combine it with `network`/`ntp`/`kernel` in the same resource — modules
-  apply sequentially and the reboot kills the node mid-run, so anything
-  ordered after it may never execute on that pass.
-- `rollout.concurrency` must stay `1`. Any higher value reboots that many
-  nodes at once, which can break control-plane quorum or workload
-  availability.
+  combine it with `network`/`ntp`/`kernel` in the same resource. Modules
+  apply in sequence and the reboot stops the node during the run. Anything
+  that is after the reboot in the sequence can fail to run on that pass.
+- `rollout.concurrency` must stay `1`. A higher value reboots that number
+  of nodes at the same time. This can break control-plane quorum or
+  workload availability.
 
 ```yaml
 apiVersion: <from the installed CRD, see Requirements>
@@ -87,30 +92,31 @@ metadata:
   name: mcc-reboot
 spec:
   reboot:
-    token: "<opaque token, e.g. a date or change-ticket id>"
+    token: "<opaque token, for example a date or change-ticket id>"
   rollout:
     concurrency: 1
     drain: true
 ```
 
-Delete the resource once the rollout completes. It's a trigger, not a
-desired state — leaving it applied re-arms a reboot for any node that joins
-the cluster afterwards (see the upstream runbook's reconvergence section).
+Delete the resource after the rollout completes. The resource is a
+trigger, not a desired state. If you leave it applied, it arms a reboot
+again for any node that joins the cluster afterwards. See the
+reconvergence section of the upstream runbook.
 
 ## Expected Results
 
 - `kubectl get machineconfigchange <name> -o jsonpath='{.status.conditions}'`
   shows the `Applied` condition `True`.
-- The change is visible on affected nodes — e.g. `sysctl <key>`,
-  `chronyc -N sources`, `/etc/resolv.conf`, or, for a reboot, a fresh
-  `uptime` on each node in turn.
-- All targeted nodes stay `Ready` in `kubectl get nodes` throughout and after
+- The change is visible on the affected nodes. For example, check
+  `sysctl <key>`, `chronyc -N sources`, or `/etc/resolv.conf`. For a
+  reboot, check for a fresh `uptime` on each node in turn.
+- All targeted nodes stay `Ready` in `kubectl get nodes` during and after
   the rollout.
 
 ## Troubleshooting
 
 | Symptom | Likely cause | Remediation |
 |---|---|---|
-| `kubectl apply` fails `strict decoding error: unknown field "spec.reboot"` (or any other module) | The cluster's CRD is older than the CR you're submitting — a stale or overridden controller manifest | See the [controllers runbook troubleshooting](../installation-guide/install-controllers.md#troubleshooting) — re-apply a manifest whose CRD matches, or drop the `machine_config_controller_manifest` override to fall back to the node-fetched default |
-| `Applied=False/Applying` stuck for a long time | A targeted node isn't converging (reboot never returned, drain stuck) | See the upstream [structured reboot runbook](https://github.com/Mirantis/machine-config-controller/blob/main/docs/structured-reboot.md#stuck-node-diagnosis-and-recovery) — the same Plan/job inspection it describes applies to non-reboot modules too |
-| A `mcc-reboot` resource is still applied well after its rollout finished | Not deleted post-rollout | Delete it — a lingering reboot resource re-triggers once on any node that later joins the cluster |
+| `kubectl apply` fails `strict decoding error: unknown field "spec.reboot"` (or any other module) | The CRD of the cluster is older than the CR that you submit. The controller manifest is stale or overridden. | See the [controllers runbook troubleshooting](../installation-guide/install-controllers.md#troubleshooting). Re-apply a manifest whose CRD matches, or delete the `machine_config_controller_manifest` override to use the default that the node fetches. |
+| `Applied=False/Applying` stuck for a long time | A targeted node does not converge (the reboot never returned or the drain is stuck). | See the upstream [structured reboot runbook](https://github.com/Mirantis/machine-config-controller/blob/main/docs/structured-reboot.md#stuck-node-diagnosis-and-recovery). The same Plan/job inspection that it describes also applies to non-reboot modules. |
+| A `mcc-reboot` resource is still applied long after its rollout finished | The resource was not deleted after the rollout. | Delete the resource. A remaining reboot resource triggers one more time on any node that later joins the cluster. |

@@ -1,8 +1,8 @@
 # Manually provision a cluster
 
-If none of the `bootc-mke3` provisioning tooling meets the needs of an `bootc-mke3` infrastructure cluster, then manual provisioning will be needed. This involves the creation of a number of machine node targets for an MKE cluster, in a network that meets the documented Mirantis product needs.
+If none of the `bootc-mke3` provisioning tools meets the needs of a `bootc-mke3` infrastructure cluster, you must provision the cluster manually. You create a number of machine node targets for an MKE cluster. The machines must be in a network that meets the documented Mirantis product needs.
 
-Because manual provisioning is so diverse, this runbook won't be able to focus on technical directives, and will have to focus on more abstract concepts.
+Manual provisioning varies a lot. For this reason, this runbook does not give technical directives. It describes abstract concepts.
 
 ## Requirements
 
@@ -15,13 +15,13 @@ Because manual provisioning is so diverse, this runbook won't be able to focus o
    
 2. Provision a number of `bootc-mke3` machines, using the `bootc-mke3` image source
    a. Machine resource specifications that meet the [MKE minimum resource requirements](https://docs.mirantis.com/mke/3.9/common/mke-hw-reqs.html)
-   b. Machines must use static IP requirements
-   c. Machines must be configured to allow access for the ansible installation tooling, typically an ssh user with sudo access
+   b. Machines must use static IP addresses
+   c. Machines must be configured to allow access for the ansible installation tools, typically an ssh user with sudo access
 
-3. Generate an [ansible inventory](https://docs.ansible.com/ansible/latest/inventory_guide/intro_inventory.html) for use with the ansible tooling by listing the machines of the cluster, with their connection information, and including the machines in either the manager or worker group.
+3. Generate an [ansible inventory](https://docs.ansible.com/ansible/latest/inventory_guide/intro_inventory.html) for the ansible tools. List the machines of the cluster with their connection information. Put each machine in the manager group or the worker group.
 
 ## Expected Results
 
-The end result is that a cluster of running machine nodes, based on the `bootc-mke3` source, networked according to the Mirantis product requirements.
+The result is a cluster of running machine nodes. The nodes are based on the `bootc-mke3` source. They are networked according to the Mirantis product requirements.
 
-A deliverable of this process an ansible inventory file, describing the machines to be used for the `bootc-mke3` cluster with the installation tools.
+The process also delivers an ansible inventory file. The file describes the machines that the installation tools use for the `bootc-mke3` cluster.

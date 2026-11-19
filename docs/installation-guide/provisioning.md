@@ -1,119 +1,126 @@
 # Provisioning
 
-Provisioning is the process of preparing cluster infrastructure that meets the requirements to be used for `bootc-mke3` installation.
+Provisioning is the process that prepares cluster infrastructure which meets the requirements for a `bootc-mke3` installation.
 
 ## Registry
 
-`bootc-mke3` represents a release via OCI image. The registry is used to store and distribute such OCI images.
+`bootc-mke3` releases as an OCI image. The registry stores and distributes these OCI images.
 
-For a use cases where cluster machines has access to the internet, official Mirantis `bootc-mke3` OCI images are stored in public accessible MSR registry (registry.mirantis.com) and can be used by anyone.
+If the cluster machines have access to the internet, the official Mirantis `bootc-mke3` OCI images are in the publicly accessible MSR registry (registry.mirantis.com). Anyone can use them.
 
-For production-grade air-gapped clusters, users should have their own registry that can be accessed by the cluster machines. This registry should contain `bootc-mke3` OCI images with desired version of products. The way of obtaining the image can vary, but the most common way is to set up a mirroring from official Mirantis registry (registry.mirantis.com).
+For production-grade air-gapped clusters, we recommend that you have your own registry that the cluster machines can access. We recommend that you put `bootc-mke3` OCI images with the desired version of the products in this registry. There are different methods to get the image. The most common method is to set up mirroring from the official Mirantis registry (registry.mirantis.com).
 
-Before pulling an image from either registry for use, verify its cosign
-signature — see
+Before you pull an image from either registry for use, verify its cosign
+signature. See
 [Verify bootc-mke3 image signatures](../operations-guide/verify-image-signatures.md).
 
 ## Private registry usage
 
-If you're planning to use private OCI registry to store `bootc-mke3` artifacts (OCI images) and use them for your cluster, you will need to provide registry credentials in order to authenticate. To do so, you will need to add credentials file into the each machine, because for most of the operations (like upgrade) there will be a need to pull OCI image from the registry.
+If you plan to use a private OCI registry to store `bootc-mke3` artifacts (OCI images) for your cluster, you must supply registry credentials for authentication. Add a credentials file to each machine, because most operations (for example, upgrade) must pull the OCI image from the registry.
 
-The way of injecting credentials into the machine can vary from case to case. Common ways, in order of applicability: **kickstart** (`%post`) for ISO-provisioned machines — the standard production path; the provided [ansible playbook](../../ansible/reg-creds-playbook.yml) (setup below) where SSH access is still available; or cloud-init user-data — cloud-platform builds (AMI/QCOW2) only, AMI primarily used for internal testing while QCOW2 is publicly announced/downloadable. The user should select the way that is most suitable for the use case.
+There are different methods to inject the credentials into the machine. These are the common methods, in order of applicability:
+
+- **kickstart** (`%post`) for ISO-provisioned machines. This is the standard production path.
+- The provided [ansible playbook](../../ansible/reg-creds-playbook.yml) (setup below), where SSH access is still available.
+- cloud-init user-data, for cloud-platform builds (AMI/QCOW2) only. AMI is mainly for internal testing. QCOW2 is publicly announced and downloadable.
+
+Select the method that is most suitable for your use case.
 
 Requirements for the registry credentials:
 
-1. Credentials should be stored in the file and following [containers registry authentication file syntax](https://github.com/containers/image/blob/main/docs/containers-auth.json.5.md)
-2. File should be stored as `/etc/ostree/auth.json`
+1. Store the credentials in a file that follows the [containers registry authentication file syntax](https://github.com/containers/image/blob/main/docs/containers-auth.json.5.md).
+2. Store the file as `/etc/ostree/auth.json`.
 
-You can also use [existing ansible playbook](../../ansible/reg-creds-playbook.yml) to perform this operation.
+You can also use the [existing ansible playbook](../../ansible/reg-creds-playbook.yml) to do this operation.
 
 ### Ansible playbook setup
 
-The playbook reads credentials from `ansible/vars/reg-creds`, which is excluded from version control. Before running the playbook, create the file from the provided template:
+The playbook reads credentials from `ansible/vars/reg-creds`, which is excluded from version control. Before you run the playbook, create the file from the provided template:
 
 ```bash
 cp ansible/vars/reg-creds.example ansible/vars/reg-creds
 ```
 
-Then edit `ansible/vars/reg-creds` and replace `<username>` and `<password>` with your actual registry credentials. Each line follows the format:
+Then edit `ansible/vars/reg-creds` and replace `<username>` and `<password>` with your registry credentials. Each line has this format:
 
 ```
 registry.mirantis.com <username> <password>
 ```
 
-Add one line per registry. The file is gitignored and will never be committed.
+Add one line for each registry. The file is gitignored, so Git never commits it.
 
 ## Machines
 
-Cluster should consist of one or more compute machine nodes. In order to use `bootc-mke3`, machines should meet following requirements:
+The cluster must have one or more compute machine nodes. To use `bootc-mke3`, the machines must meet these requirements:
 
-1. All machines must use the `bootc-mke3` source base (image). For available images see the [Releases page](https://github.com/Mirantis/bootc-mke3/releases)
+1. All machines must use the `bootc-mke3` source base (image). For available images, see the [Releases page](https://github.com/Mirantis/bootc-mke3/releases)
 
 > [!NOTE]
-> **Simple** ISO edition is used mostly for demo/test purposes. For production-grade clusters consider using **Generic** ISO. The QCOW2 cloud image ships uncustomised — it is the user's responsibility to customise and secure it appropriately for production use.
+> **Simple** ISO edition is mostly for demo and test purposes. For production-grade clusters, we recommend the **Generic** ISO. The QCOW2 cloud image is not customised. The user must customise and secure it appropriately for production use.
 
-2. All machines meet MKE hardware requirements. For the list of requirements, please see Mirantis Kubernetes Engine official documentation pages, [hardware requirements section](https://docs.mirantis.com/mke/3.9/common/mke-hw-reqs.html)
+2. All machines must meet the MKE hardware requirements. For the list of requirements, see the Mirantis Kubernetes Engine official documentation, [hardware requirements section](https://docs.mirantis.com/mke/3.9/common/mke-hw-reqs.html)
 
 ### Machine customisation at provision time
 
-Machine customization at provision time is done via **kickstart** for
-ISO-provisioned machines — the standard production mechanism (see
-[ISO editions](iso-editions.md#generic-image-customisation) for the
-mandatory lines and
-[Common kickstart customisations](iso-editions.md#common-kickstart-customisations)
-for recipes). cloud-init is only available on the cloud-platform builds
-(AMI/QCOW2) — AMI builds are primarily used for internal testing, while
-QCOW2 is publicly announced/downloadable. Where this documentation offers
-both mechanisms, prefer kickstart unless you are specifically working with
+You customise machines at provision time with **kickstart** for
+ISO-provisioned machines. This is the standard production mechanism. For
+the mandatory lines, see
+[ISO editions](iso-editions.md#generic-image-customisation). For recipes, see
+[Common kickstart customisations](iso-editions.md#common-kickstart-customisations).
+cloud-init is available only on the cloud-platform builds
+(AMI/QCOW2). AMI builds are mainly for internal testing. QCOW2 is publicly
+announced and downloadable. Where this documentation offers
+both mechanisms, we recommend kickstart, unless you work specifically with
 a cloud build.
 
-Some configuration is best made **before the machine first boots**. Extra
-kernel modules are the load-bearing case: a module declared in a kickstart
-payload is present from first boot, because `%post` writes into the
-installed tree before it boots. A cloud-init payload is not equivalent here
-— it runs after `systemd-modules-load.service`, so the module arrives on
-the second boot unless it is `modprobe`d alongside the write; see [Adding
+It is best to make some configuration **before the machine first boots**. Extra
+kernel modules are the main example. A module that is declared in a
+kickstart payload is present from first boot, because `%post` writes into
+the installed tree before the machine boots. A cloud-init payload is not
+equivalent. It runs after `systemd-modules-load.service`, so the module
+arrives on the second boot, unless the payload runs `modprobe` for it
+together with the write. See [Adding
 modules](image-architecture.md#adding-modules). On an image that latches
-`kernel.modules_disabled=1` early in boot, a reboot is the only route in
-that case (current images ship `0`). Disabling a baked service
-is the other common case. Both require a machine source you can customise —
-the **Generic** ISO with your own kickstart file, or a cloud build with
-cloud-init user-data. The **Simple** ISO embeds its own kickstart and
-exposes no such hook, so on it these changes can only be made after
-installation, on the running node, with a reboot wherever the module latch
-is involved. See
-[Image architecture](image-architecture.md) for what the image ships and
+`kernel.modules_disabled=1` early in boot, a reboot is the only method
+in that case (current images have `0`). Disabling a baked service
+is the other common example. Both examples need a machine source that you
+can customise: the **Generic** ISO with your own kickstart file, or a
+cloud build with cloud-init user-data. The **Simple** ISO has its own
+embedded kickstart and has no such hook. On it, you can make these
+changes only after installation, on the running node. Where the module
+latch is involved, you must also reboot. See
+[Image architecture](image-architecture.md) for what the image contains and
 which customisation points are supported.
 
 ### Machine connection
 
-In order for the installer to interact with the cluster, the ansible tooling must be able to connect to the machines. As ansible has a flexible system for connecting to machines, a wide variety of [options are available](https://docs.ansible.com/ansible/latest/inventory_guide/connection_details.html).
+For the installer to interact with the cluster, the ansible tooling must be able to connect to the machines. Ansible has a flexible system to connect to machines. Many [options are available](https://docs.ansible.com/ansible/latest/inventory_guide/connection_details.html).
 
-Preferred way of machine connection is SSH with a passwordless user that has sudo access.
+The preferred method of machine connection is SSH with a passwordless user that has sudo access.
 
 ## Network 
 
-The cluster machines must all be in a valid network. Please see Mirantis Kubernetes Engine official documentation pages, [networking section](https://docs.mirantis.com/mke/3.9/install/predeployment/configure-networking.html), on how to properly configure networking.
+All cluster machines must be in a valid network. For how to configure the network correctly, see the Mirantis Kubernetes Engine official documentation, [networking section](https://docs.mirantis.com/mke/3.9/install/predeployment/configure-networking.html).
 
 ## Provisioning output (coupling to the installer/upgrader)
 
-When provisioning is complete, and the machine cluster is ready, provisioning needs to produce an ansible inventory which defines how ansible can connect to all of the machine nodes of the cluster. Description of Ansible tooling input parameters can be found in [Ansible inventory input document](ansible-inventory-input.md).
+When provisioning is complete and the machine cluster is ready, provisioning must produce an ansible inventory. The inventory defines how ansible connects to all of the machine nodes of the cluster. The input parameters of the Ansible tooling are described in the [Ansible inventory input document](ansible-inventory-input.md).
 
 ## Provisioning approach
 
 ### Terraform tooling
 
-This `bootc-mke3` tooling includes a number of terraform modules that can provision a cluster. 
+This `bootc-mke3` tooling includes a number of terraform modules that can provision a cluster.
 
-- **vSphere.** Full guide on how to provision `bootc-mke3` cluster on vSphere can be found in [this document](provision-terraform-vsphere.md)
-- **AWS.** Full guide on how to provision `bootc-mke3` cluster on AWS can be found in [this document](provision-terraform-aws.md)
+- **vSphere.** For the full guide to provision a `bootc-mke3` cluster on vSphere, see [this document](provision-terraform-vsphere.md).
+- **AWS.** For the full guide to provision a `bootc-mke3` cluster on AWS, see [this document](provision-terraform-aws.md).
 
 > [!IMPORTANT]
-> AWS-based provisioning is considered **dev/testing only**, not a production-grade `bootc-mke3` provisioning path. Mirantis maintains AWS AMIs for `bootc-mke3` builds for this purpose, but AMI IDs are not published in this document and are not publicly announced. Contact your Mirantis representative to obtain a current AMI ID and its owning AWS account for your region.
+> Mirantis considers AWS-based provisioning **dev/testing only**. It is not a production-grade `bootc-mke3` provisioning path. Mirantis maintains AWS AMIs for `bootc-mke3` builds for this purpose. The AMI IDs are not published in this document and are not publicly announced. Contact your Mirantis representative to get a current AMI ID and its owning AWS account for your region.
 
 ### Manual provisioning (roll your own)
 
-There is no requirement to use any of the Mirantis tooling for provisioning. If a cluster has custom needs that are not addressed with the Mirantis provisioning, then the cluster can be created with any approach, as long as the resulting cluster provides the needed machine and cluster components, and an ansible inventory can be created.
+You do not have to use the Mirantis tooling to provision. If a cluster has custom needs that the Mirantis provisioning does not address, you can create the cluster with any approach. The resulting cluster must have the needed machine and cluster components, and you must be able to create an ansible inventory.
 
-Further details can be found in the runbook for [manually provisioning a cluster](provision-manually.md)
+For more details, see the runbook for [manually provisioning a cluster](provision-manually.md).
 

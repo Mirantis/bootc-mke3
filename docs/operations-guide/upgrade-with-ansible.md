@@ -1,52 +1,52 @@
 # Upgrade bootc-mke3 via Ansible
 
-This guide explains how to upgrade an existing Mirantis Kubernetes Engine (MKE) cluster to the latest version or switch to a specific newer release, by running an Ansible playbook from an operator's workstation.
+This guide describes how to upgrade an existing Mirantis Kubernetes Engine (MKE) cluster to the latest version, or to a specific newer release. You run an Ansible playbook from the workstation of an operator.
 
-> **This is a manual, Ansible-driven exception path.** It requires SSH and
-> sudo access to every cluster machine from the machine running the
+> **This is a manual, Ansible-driven exception path.** It needs SSH and
+> sudo access to every cluster machine from the machine that runs the
 > playbook. The canonical way to upgrade a `bootc-mke3` cluster is the
-> kube-native `ClusterUpgrade` custom resource, handled by
-> `cluster-upgrade-controller` (installed by default) — see
+> kube-native `ClusterUpgrade` custom resource, which
+> `cluster-upgrade-controller` (installed by default) handles. See
 > [upgrade via the ClusterUpgrade CR](upgrade-with-controller.md), which
-> needs no SSH. Use this Ansible playbook only when the controller is
-> unavailable or disabled on the cluster, or when you specifically need
-> workstation-driven orchestration outside Kubernetes. Both paths run the
-> identical underlying `mirantis/ucp upgrade` checks and commands.
+> does not need SSH. Use this Ansible playbook only when the controller is
+> unavailable or disabled on the cluster. You can also use it when you
+> specifically need orchestration from a workstation outside Kubernetes. Both
+> paths run the same underlying `mirantis/ucp upgrade` checks and commands.
 
 ## Prerequisites
 
-1. Ansible installed on the machine running the upgrade.
-2. An Ansible inventory describing the cluster. See the [inventory description document](../installation-guide/ansible-inventory-input.md) for details.
-3. Cluster machines should have RO access to a OCI registry with new `bootc-mke3` version. See [this document](../installation-guide/provisioning.md#registry) for more information about registry requirement.
+1. Ansible installed on the machine that runs the upgrade.
+2. An Ansible inventory that describes the cluster. For details, see the [inventory description document](../installation-guide/ansible-inventory-input.md).
+3. We recommend that the cluster machines have RO (read-only) access to an OCI registry that has the new `bootc-mke3` version. For more information about the registry requirement, see [this document](../installation-guide/provisioning.md#registry).
 
 ## Procedure
 
-Before starting upgrade procedure, you can specify custom values for upgrade operation (if needed). To do so, add values in:
+Before you start the upgrade procedure, you can set custom values for the upgrade operation (if it is necessary). To do this, add values in:
  - `vars/common-vars.yml`
  - `vars/upgrade-vars.yml`
  - `vars/mke-creds.yml`
 
-Additionally, you can perform MCR/OS upgrade in one of the two ways: 
+You can do the MCR/OS upgrade in one of two ways:
 
-1. **Switch to a specific image and/or tag.** To do so, update `bootc_image_ref` in `vars/upgrade-vars.yml` with the full OCI image URL, including the image tag. If you're planning to use/switch to a private registry, please add corresponding credentials to machines, using [this ansible playbook](../../ansible/reg-creds-playbook.yml). Verify the target image's cosign signature before setting `bootc_image_ref` — see [Verify bootc-mke3 image signatures](verify-image-signatures.md#at-installswitch-time).
-2. **Upgrade to the latest version of the current image tag.** To do so, leave `bootc_image_ref` unchanged or empty in `vars/upgrade-vars.yml`. **This is a no-op under the current tagging scheme**: every build gets a unique, never-reused tag, so nothing is ever pushed under a tag a node is already tracking — `bootc upgrade` will find nothing new. Use option 1 instead; this option is documented for completeness / older registries only.
+1. **Switch to a specific image and/or tag.** To do this, set `bootc_image_ref` in `vars/upgrade-vars.yml` to the full OCI image URL, including the image tag. If you plan to switch to a private registry, add the applicable credentials to the machines with [this ansible playbook](../../ansible/reg-creds-playbook.yml). Before you set `bootc_image_ref`, verify the cosign signature of the target image. See [Verify bootc-mke3 image signatures](verify-image-signatures.md#at-installswitch-time).
+2. **Upgrade to the latest version of the current image tag.** To do this, keep `bootc_image_ref` unchanged or empty in `vars/upgrade-vars.yml`. **This does nothing under the current tagging scheme.** Every build gets a unique tag that is never reused. Therefore nothing is pushed under a tag that a node already tracks, and `bootc upgrade` finds nothing new. Use option 1 instead. This option is documented only for completeness and for older registries.
 
-Worker nodes are upgraded in batches of `upgrade_worker_batch_size` (default `3`, in `vars/upgrade-vars.yml`) — analogous to `workerConcurrency` on the [ClusterUpgrade CR path](upgrade-with-controller.md).
+The playbook upgrades worker nodes in batches of `upgrade_worker_batch_size` (default `3`, in `vars/upgrade-vars.yml`). This is similar to `workerConcurrency` on the [ClusterUpgrade CR path](upgrade-with-controller.md).
 
-Once all the variables are set (if needed), perform next two steps:
+When all the variables are set (if it is necessary), do these two steps:
 
-1. Ensure the expected Ansible inventory file exists and is correct.
+1. Make sure that the expected Ansible inventory file exists and is correct.
 
-2. Run the upgrade from the `ansible/` directory, so `ansible.cfg` (which sets
-   `host_key_checking = false`, required for fresh hosts whose SSH host keys
-   aren't yet known) is picked up:
+2. Run the upgrade from the `ansible/` directory, so that Ansible uses
+   `ansible.cfg`. This file sets `host_key_checking = false`, which is
+   necessary for new hosts whose SSH host keys are not yet known:
    ```bash
    cd ansible
    ansible-playbook -i <path-to-your-inventory> mke-upgrade-playbook.yml
    ```
-   Running `ansible-playbook` from outside `ansible/` (e.g. from the repo
-   root) skips `ansible.cfg` and will fail with `Host key verification
-   failed` against newly provisioned hosts.
+   If you run `ansible-playbook` from outside `ansible/` (for example, from the
+   repository root), Ansible does not use `ansible.cfg`. The playbook then
+   fails with `Host key verification failed` on newly provisioned hosts.
 
 ### Backups taken by the playbook
 
@@ -55,44 +55,44 @@ Before the managers are switched to the new image, `mke-upgrade-playbook.yml` ru
 - `mke-<MKE version>-backup-<timestamp>.tar`: the MKE backup.
 - `swarm-<engine version>-backup-<timestamp>.tar.tgz`: the Swarm state from `/var/lib/docker/swarm/`.
 
-The directory is on persistent storage, so the archives survive the manager reboots in this procedure. The playbook never deletes them, and they stay on the manager's disk until you delete them. They hold the MKE CA private keys. Delete them once you no longer need them. The directory is not `/var/lib/mke-backup`, the default `backupDir` of `cluster-upgrade-controller`, so a restore by the controller never picks up these archives.
+The directory is on persistent storage, so the archives stay after the manager reboots in this procedure. The playbook never deletes them, and they stay on the disk of the manager until you delete them. They hold the MKE CA private keys. Delete them when you no longer need them. The directory is not `/var/lib/mke-backup`, which is the default `backupDir` of `cluster-upgrade-controller`. Therefore a restore by the controller never uses these archives.
 
 ## Expected Results
 
-Ansible playbook runs without error. In order to verify the upgrade, go to the MKE UI (`mke_url` in ansible inventory file) and log in with the credentials specified in `vars/mke-creds.yml` and make sure version is upgraded as expected.
+The Ansible playbook runs without error. To verify the upgrade, open the MKE UI (`mke_url` in the Ansible inventory file). Log in with the credentials in `vars/mke-creds.yml`. Make sure that the version is upgraded as expected.
 
 ## MKE upgrade process troubleshooting
 
-MKE upgrade performed by ansible tooling which effectively just executing [MKE bootstrapper docker image with upgrade command](https://docs.mirantis.com/mke/3.9/cli-ref/mke-cli-upgrade.html). Additionally, before upgrade is performed, there are number of preupgrade checks and backups performed.
+The Ansible tooling does the MKE upgrade. It runs the [MKE bootstrapper docker image with the upgrade command](https://docs.mirantis.com/mke/3.9/cli-ref/mke-cli-upgrade.html). Before the upgrade, the tooling also does a number of pre-upgrade checks and backups.
 
-To troubleshoot MKE upgrade process, please see [official MKE documentation page](https://docs.mirantis.com/mke/3.9/ops/upgrades-and-migrations/upgrade-mke/troubleshoot-upgrade.html)
+To troubleshoot the MKE upgrade process, see the [official MKE documentation page](https://docs.mirantis.com/mke/3.9/ops/upgrades-and-migrations/upgrade-mke/troubleshoot-upgrade.html).
 
 ## MCR upgrade process troubleshooting
 
-MCR upgrade is implemented using ansible tooling which applies new bootc deployments, containing new MCR versions (and other OS packages) in the form of an OCI image. In case of failure, you will be prompted with an error message that applying the new bootc deployment failed. If the upgrade failed on this stage, you need to manually inspect the node to check if:
+The Ansible tooling does the MCR upgrade. It applies new bootc deployments that contain new MCR versions (and other OS packages) as an OCI image. If the upgrade fails, an error message shows that the new bootc deployment failed. If the upgrade failed at this stage, inspect the node manually to check these conditions:
 
-1. There is no issue with network connectivity between node(s) and container registry, that contains new deployment in a form of OCI image
-2. There is no issue with registry credentials (if private registry is used)
+1. There is no problem with the network connection between the nodes and the container registry that has the new deployment as an OCI image.
+2. There is no problem with the registry credentials (if you use a private registry).
 
 ## Upgrade rollback
 
 > [!NOTE]
-> This section covers the **OS/MCR-only** manual rollback. It does not
-> restore MKE. For the combined OS+MCR+MKE rollback via the canonical
+> This section describes the **OS/MCR-only** manual rollback. It does not
+> restore MKE. For the combined OS+MCR+MKE rollback with the canonical
 > `ClusterUpgrade` CR path, see
 > [Roll back a bootc-mke3 upgrade](rollback-bootc-mke3.md) instead.
 
-In case of MCR upgrade failure, there is a way to perform a rollback to a previous deployment (= previous version of MCR and OS packages).
+If the MCR upgrade fails, you can roll back to a previous deployment (the previous version of MCR and OS packages).
 
 ### Procedure
 
-1. Ensure that node(s) are not running any critical workloads by draining the node (if it wasn't performed before).
-2. SSH to the node and execute the command:
+1. Drain the node to make sure that it does not run critical workloads (if you did not do this before).
+2. Connect to the node with SSH and run the command:
 ```
 sudo bootc rollback
 ```
-3. Once the operation has finished, reboot the machine.
+3. When the command is complete, reboot the machine.
 
 ### Expected results
 
-The machine should have previous version of MCR and OS packages after reboot, without affecting the MKE version.
+After the reboot, we expect the machine to have the previous version of MCR and OS packages. The MKE version does not change.
