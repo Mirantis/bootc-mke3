@@ -104,8 +104,12 @@ the cluster afterwards (see the upstream runbook's reconvergence section).
 - The change is visible on affected nodes — e.g. `sysctl <key>`,
   `chronyc -N sources`, `/etc/resolv.conf`, or, for a reboot, a fresh
   `uptime` on each node in turn.
-- All targeted nodes stay `Ready` in `kubectl get nodes` throughout and after
-  the rollout.
+- With the network, ntp and kernel modules, all targeted nodes stay `Ready` in
+  `kubectl get nodes` throughout and after the rollout.
+- With the reboot module, a node goes `NotReady` while it reboots. This is not
+  a fault. The `reboot` module restarts each node with `systemctl reboot`, and
+  this runbook requires `rollout.concurrency: 1`, so at most one node at a time
+  is not `Ready`. All targeted nodes are `Ready` after the rollout.
 
 ## Troubleshooting
 
