@@ -139,6 +139,11 @@ different reason: draining a manager is disruptive.
 
 ### How do I replace a manager?
 
-Promote the replacement, confirm the new manager is `Ready` and the count is
-odd, then demote and expel the old one — in that order, so the cluster never
-drops below the fault tolerance you started with.
+Promote the replacement. Confirm that the new manager is `Ready` and that the
+manager count is one more than before. If the count was odd before, it is even
+for a short time. This is not a fault, because the cluster tolerates the same
+number of manager failures as it did before the promotion.
+
+Then demote and expel the old manager. Confirm that the manager count is back
+to the starting count. Do these steps in this order, so the cluster never drops
+below the fault tolerance you started with.
