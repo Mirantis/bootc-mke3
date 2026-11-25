@@ -62,6 +62,26 @@ kubectl apply -f mcc-example.yaml
 kubectl get machineconfigchange mcc-example -o jsonpath='{.status.conditions}'
 ```
 
+#### MachineConfigChange resources and the pre-upgrade check
+
+For each `MachineConfigChange` that sets a module, the controller creates a
+SUC `Plan` with the same name in `system-upgrade`. The resource owns the Plan.
+The Plan has the label `app.kubernetes.io/managed-by=machine-config-controller`.
+The Plan stays while the resource exists. If you delete only the Plan, the
+controller creates it again. A new node that joins the cluster runs the job of
+the Plan. This is the intended behavior for network, ntp and kernel resources.
+
+The readiness check in the
+[upgrade runbook](upgrade-with-controller.md#1-confirm-the-cluster-is-ready-to-upgrade)
+leaves out these Plans, so a kept network, ntp or kernel resource does not fail
+the check. You do not need to delete these resources before an upgrade. The
+effect of a kept Plan during the upgrade itself was not checked.
+
+To stop a Plan for good, delete its resource. This does not revert the
+configuration on the nodes. It stops future applications of the resource.
+Nodes that join later do not get the configuration until you apply the
+resource again.
+
 ### Reboot: always a dedicated resource
 
 The same CRD's `reboot` module drives a structured, cluster-wide rolling
