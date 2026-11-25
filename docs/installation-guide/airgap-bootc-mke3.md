@@ -22,10 +22,10 @@ variable repointed at it.
 | `cluster-upgrade-controller` manifest | `kubectl apply -f` | controller | **already air-gap-safe by default** — `tasks/fetch-cluster-upgrade-controller-manifest-tasks.yml` copies the exact static manifest bootc-mirantis staged into the image (`/usr/share/mke-controllers/manifests/cluster-upgrade-controller-manifest.yaml`) from a node to the controller before applying it; no mirroring needed unless overridden | `vars/common-vars.yml: cluster_upgrade_controller_manifest` |
 | Container image referenced inside that manifest (controller pod image) | Kubernetes, once the manifest is applied | cluster nodes (via kubelet) | **already air-gap-safe by default** — the image tag baked into the node-fetched manifest is the one `mke-images.service` preloaded into the node's local image store at boot | not applicable unless `cluster_upgrade_controller_manifest` is overridden to a different manifest — then mirror whatever tag *that* manifest references |
 | `machine-config-controller` manifest | `kubectl apply -f` | controller | **already air-gap-safe by default** — `tasks/fetch-machine-config-controller-manifest-tasks.yml` copies the exact static manifest bootc-mirantis staged into the image (`/usr/share/mke-controllers/manifests/machine-config-controller-manifest.yaml`) from a node to the controller before applying it; no mirroring needed unless overridden | `vars/common-vars.yml: machine_config_controller_manifest` |
-| Container images referenced inside that manifest (controller + node agent pods) | Kubernetes, once the manifest is applied | cluster nodes (via kubelet) | **already air-gap-safe by default** — the image tags baked into the node-fetched manifest are the ones `mke-images.service` preloaded into the node's local image store at boot | not applicable unless `machine_config_controller_manifest` is overridden to a different manifest — then mirror whatever tags *that* manifest references |
+| Container image referenced inside that manifest (controller pod image) | Kubernetes, once the manifest is applied | cluster nodes (via kubelet) | **already air-gap-safe by default** — the image tag baked into the node-fetched manifest is the one `mke-images.service` preloaded into the node's local image store at boot. The node agent pods are not part of this row: SUC creates them as Jobs, see the row about Jobs that SUC creates | not applicable unless `machine_config_controller_manifest` is overridden to a different manifest — then mirror whatever tag *that* manifest references |
 | System Upgrade Controller CRDs/manifest | `kubectl apply -f` | controller | **already air-gap-safe by default** — `tasks/fetch-controller-manifests-tasks.yml` copies the exact manifests bootc-mirantis staged into the image (`/usr/share/mke-controllers/manifests/`) from a node to the controller before applying them; no mirroring needed unless overridden | `vars/common-vars.yml: suc_crd_manifest_src`, `suc_controller_manifest_src` — only override if you deliberately want a different SUC version than the one preloaded on this image |
 | `rancher/system-upgrade-controller` container image (referenced *inside* the fetched manifest) | Kubernetes, once that manifest is applied | cluster nodes (via kubelet) | **already air-gap-safe by default** — the exact tag baked into the fetched manifest is the one `mke-images.service` preloaded into the node's local image store at boot, so kubelet never needs to pull it | not applicable unless `suc_controller_manifest_src` is overridden to a different manifest — then mirror whatever tag *that* manifest references |
-| Container images run by the Jobs SUC creates during a `ClusterUpgrade` (for the `ClusterUpgrade` steps, the `cluster-upgrade-controller` image itself) | Kubernetes, when SUC creates each step's Job | cluster nodes (via kubelet) | **air-gap-safe only when `SYSTEM_UPGRADE_JOB_IMAGE_PULL_POLICY` is `IfNotPresent`.** The images are preloaded, but SUC stamps this pull policy on every container of every Job it creates, and upstream ships it as `Always` — the kubelet then tries to reach the registry on every step even though the image is already on the node. Images built on or after 2026-10-29 bake `IfNotPresent` into the staged SUC manifest; images built before that need the one-time patch in [Older images: SUC Job pull policy](#older-images-suc-job-pull-policy) | not applicable once the policy is `IfNotPresent` — mirror only if you deliberately keep `Always` |
+| Container images run by the Jobs SUC creates: for a `ClusterUpgrade`, the `cluster-upgrade-controller` image itself; for a `MachineConfigChange`, the `machine-config-controller` node agent image | Kubernetes, when SUC creates each step's or node's Job | cluster nodes (via kubelet) | **air-gap-safe only when `SYSTEM_UPGRADE_JOB_IMAGE_PULL_POLICY` is `IfNotPresent`.** The images are preloaded, but SUC stamps this pull policy on every container of every Job it creates, and upstream ships it as `Always` — the kubelet then tries to reach the registry on every `ClusterUpgrade` step and every `MachineConfigChange` agent run even though the image is already on the node. Images built on or after 2026-10-29 bake `IfNotPresent` into the staged SUC manifest; images built before that need the one-time patch in [Older images: SUC Job pull policy](#older-images-suc-job-pull-policy) | not applicable once the policy is `IfNotPresent` — mirror only if you deliberately keep `Always` |
 
 Practically: for a fully air-gapped run you need, at minimum, the
 `bootc_image_ref` OS image mirrored. SUC, `cluster-upgrade-controller`, and
@@ -33,7 +33,8 @@ Practically: for a fully air-gapped run you need, at minimum, the
 an image built on or after 2026-10-29 — their manifests and container
 images come from what bootc-mirantis already staged into the image, fetched
 from a node rather than the network. On older images, one manual step is also
-required before the first upgrade: [patch the SUC Job pull
+required before the first `ClusterUpgrade` and before the first
+`MachineConfigChange`: [patch the SUC Job pull
 policy](#older-images-suc-job-pull-policy).
 
 ## Older images: SUC Job pull policy
@@ -49,6 +50,15 @@ survives into the cluster. On an air-gapped cluster this leaves every
 "registry.mirantis.com/cluster-upgrade-controller/cluster-upgrade-controller:<tag>"
 ... i/o timeout`) until the registry becomes reachable or the setting is
 changed.
+
+A `MachineConfigChange` fails in the same way. machine-config-controller
+creates a Plan, and SUC creates a Job for each targeted node. The agent pod of
+that Job gets `imagePullPolicy: Always`, and the kubelet tries to pull
+`registry.mirantis.com/machine-config-controller/machine-config-controller/agent:<tag>`
+although the image is already on the node. The pod stays at `ErrImagePull` /
+`ImagePullBackOff` in the `system-upgrade` namespace. The Plan keeps the node in
+`applying`, so the resource stays at `Applied=False/Applying` and never reaches
+`Applied=True`.
 
 Check the live value:
 
@@ -69,10 +79,12 @@ kubectl -n system-upgrade rollout restart deployment system-upgrade-controller
 kubectl -n system-upgrade rollout status deployment system-upgrade-controller
 ```
 
-Do this **before** applying a `ClusterUpgrade`. A Job takes its pull policy
-when SUC creates it and a Job's pod template cannot be edited afterwards, so
-Jobs that already exist keep `Always`. After the change, confirm the pod of
-the active step reports `IfNotPresent`:
+Do this **before** applying a `ClusterUpgrade` or a `MachineConfigChange`. A
+Job takes its pull policy when SUC creates it and a Job's pod template cannot
+be edited afterwards, so Jobs that already exist keep `Always`. How a
+`MachineConfigChange` that already hit the pull error recovers after the patch
+was not checked. After the change, confirm the pod of the active step or the
+agent pod reports `IfNotPresent`:
 
 ```sh
 kubectl -n system-upgrade get pods \
@@ -128,5 +140,6 @@ your internal mirror host(s) standing in for `registry.mirantis.com`. Run
 4. Run `reg-creds-playbook.yml`, then `mke-install-playbook.yml`.
 5. On an image built before 2026-10-29, set
    `SYSTEM_UPGRADE_JOB_IMAGE_PULL_POLICY` to `IfNotPresent` after install and
-   before the first `ClusterUpgrade` — see
+   before the first `ClusterUpgrade` and before the first
+   `MachineConfigChange` — see
    [Older images: SUC Job pull policy](#older-images-suc-job-pull-policy).
