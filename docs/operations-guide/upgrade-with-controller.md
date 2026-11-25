@@ -121,15 +121,31 @@ the upgrade cannot proceed without it:
 
 ```sh
 kubectl -n system-upgrade get deploy system-upgrade-controller
-kubectl -n system-upgrade get plans,jobs
+kubectl -n system-upgrade get plans -l 'app.kubernetes.io/managed-by!=machine-config-controller'
+kubectl -n system-upgrade get jobs
+kubectl get machineconfigchange
 ```
 
 The deployment must read `1/1`. The second command should return `No
 resources found` on a cluster with no upgrade history: a leftover `Plan`
-re-fires against nodes that join later, and a `Job` still running or in
-error is a previous upgrade that never finished. SUC's own TTL
+re-fires against nodes that join later. The third command should return `No
+resources found` too. A `Job` still running or in error is a previous upgrade
+that never finished. SUC's own TTL
 (`SYSTEM_UPGRADE_JOB_TTL_SECONDS_AFTER_FINISH`, 900s) removes completed
 jobs, so anything older is residue worth clearing.
+
+The second command leaves out the Plans of `MachineConfigChange` resources.
+machine-config-controller creates one Plan for each `MachineConfigChange`
+that sets a module. It labels the Plan `app.kubernetes.io/managed-by=machine-config-controller`
+and keeps the Plan while the resource exists. If you delete the Plan, the
+controller creates it again. For a network, ntp or kernel resource, it is the
+intended behavior that the Plan runs on nodes that join later. So the Plan is
+not residue. A `Job` of such a Plan that runs now is a rollout in progress.
+Wait until it finishes.
+
+The last command lists the `MachineConfigChange` resources. Keep the network,
+ntp and kernel resources. A reboot resource must not remain after its rollout.
+See [Machine configuration changes](machine-config-operations.md#machineconfigchange-resources-and-the-pre-upgrade-check).
 
 Do not extend this to `pods`: the `system-upgrade` namespace also holds the
 `system-upgrade-controller` and `machine-config-controller` pods themselves,
